@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runWeeklyMatching } from "@/lib/matching/engine";
 import { getWeekIdentifier } from "@/lib/utils/date-classifier";
+import { validateApiKey } from "@/lib/utils/api-auth";
 
 export async function POST(request: NextRequest) {
+  const authError = validateApiKey(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json().catch(() => ({}));
     const weekIdentifier =

@@ -13,7 +13,9 @@
     "db:studio": "prisma studio",
     "seed:demo": "tsx scripts/seed-demo.ts",
     "import:dossiers": "tsx scripts/import-dossiers.ts",
-    "validate": "tsx scripts/validate-matches.ts"
+    "validate": "tsx scripts/validate-matches.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -27,11 +29,12 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.19.15",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "prisma": "^6.4.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.0"
   }
 }

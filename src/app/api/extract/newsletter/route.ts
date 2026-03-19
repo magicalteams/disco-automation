@@ -8,9 +8,13 @@ import {
 } from "@/schemas/newsletter-opportunity";
 import { classifyAndSetExpiry, getWeekIdentifier } from "@/lib/utils/date-classifier";
 import { pushOpportunitiesToSheet } from "@/lib/clients/google-sheets";
+import { validateApiKey } from "@/lib/utils/api-auth";
 import { z } from "zod";
 
 export async function POST(request: NextRequest) {
+  const authError = validateApiKey(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const input = NewsletterExtractionRequestSchema.parse(body);

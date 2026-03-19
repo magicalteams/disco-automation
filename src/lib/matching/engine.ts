@@ -158,11 +158,16 @@ export async function runWeeklyMatching(
       for (const match of parsed.data.matches) {
         if (match.confidenceScore < threshold) continue;
 
+        const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+        const matchName = normalize(match.partnerName);
         const partner = partners.find(
-          (p) => p.name.toLowerCase() === match.partnerName.toLowerCase()
+          (p) => normalize(p.name) === matchName
         );
         if (!partner) {
-          console.warn(`Partner "${match.partnerName}" not found in database, skipping`);
+          console.warn(
+            `Partner "${match.partnerName}" not found in database (normalized: "${matchName}"), skipping. ` +
+            `Available: ${partners.map((p) => p.name).join(", ")}`
+          );
           continue;
         }
 
@@ -187,30 +192,32 @@ export async function runWeeklyMatching(
       low: allMatches.filter((m) => m.confidenceScore < 0.6).length,
     };
 
-    // 7. Write all matches to DB (skip in dry-run mode)
+    // 7. Write all matches to DB in a transaction (skip in dry-run mode)
     if (!options.dryRun && matchRun) {
-      if (allMatches.length > 0) {
-        await prisma.matchResult.createMany({
-          data: allMatches.map((m) => ({
-            opportunityId: m.opportunityId,
-            partnerId: m.partnerId,
-            confidenceScore: m.confidenceScore,
-            rationale: m.rationale,
-            internalLanguage: m.internalLanguage,
-            clientFacingLanguage: m.clientFacingLanguage,
-            matchRunId: matchRun.id,
-          })),
-        });
-      }
+      await prisma.$transaction(async (tx) => {
+        if (allMatches.length > 0) {
+          await tx.matchResult.createMany({
+            data: allMatches.map((m) => ({
+              opportunityId: m.opportunityId,
+              partnerId: m.partnerId,
+              confidenceScore: m.confidenceScore,
+              rationale: m.rationale,
+              internalLanguage: m.internalLanguage,
+              clientFacingLanguage: m.clientFacingLanguage,
+              matchRunId: matchRun.id,
+            })),
+          });
+        }
 
-      // 8. Update match run as completed
-      await prisma.matchRun.update({
-        where: { id: matchRun.id },
-        data: {
-          status: "completed",
-          matchCount: allMatches.length,
-          completedAt: new Date(),
-        },
+        // 8. Update match run as completed
+        await tx.matchRun.update({
+          where: { id: matchRun.id },
+          data: {
+            status: "completed",
+            matchCount: allMatches.length,
+            completedAt: new Date(),
+          },
+        });
       });
     }
 

@@ -17,15 +17,25 @@ export async function GET(request: NextRequest) {
     const weekIdentifier = getWeekIdentifier(new Date());
     console.log(`Cron triggered: weekly matching for ${weekIdentifier}`);
 
-    // 1. Sync status overrides from Google Sheet
+    // 1. Sync status overrides from Google Sheet (only update changed rows)
     const overrides = await fetchStatusOverrides(weekIdentifier);
     let overrideCount = 0;
-    for (const override of overrides) {
-      await prisma.newsletterOpportunity.update({
-        where: { id: override.opportunityId },
-        data: { status: override.status },
+    if (overrides.length > 0) {
+      const dbOpportunities = await prisma.newsletterOpportunity.findMany({
+        where: { id: { in: overrides.map((o) => o.opportunityId) } },
+        select: { id: true, status: true },
       });
-      overrideCount++;
+      const dbStatusMap = new Map(dbOpportunities.map((o) => [o.id, o.status]));
+
+      for (const override of overrides) {
+        if (dbStatusMap.get(override.opportunityId) !== override.status) {
+          await prisma.newsletterOpportunity.update({
+            where: { id: override.opportunityId },
+            data: { status: override.status },
+          });
+          overrideCount++;
+        }
+      }
     }
     if (overrideCount > 0) {
       console.log(`Applied ${overrideCount} status overrides from Sheet`);

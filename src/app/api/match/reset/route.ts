@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/clients/db";
 import { getWeekIdentifier } from "@/lib/utils/date-classifier";
+import { validateApiKey } from "@/lib/utils/api-auth";
 
 /**
  * POST /api/match/reset
@@ -12,6 +13,9 @@ import { getWeekIdentifier } from "@/lib/utils/date-classifier";
  * Body: { weekIdentifier?: string }
  */
 export async function POST(request: NextRequest) {
+  const authError = validateApiKey(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json().catch(() => ({}));
     const weekIdentifier =

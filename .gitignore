@@ -19,9 +19,6 @@ npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# prisma
-prisma/migrations/
-
 # misc
 .DS_Store
 *.pem

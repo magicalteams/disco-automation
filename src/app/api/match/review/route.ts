@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/clients/db";
 import { getWeekIdentifier } from "@/lib/utils/date-classifier";
+import { validateApiKey } from "@/lib/utils/api-auth";
 
 /**
  * GET /api/match/review?week=2026-W12
@@ -9,6 +10,8 @@ import { getWeekIdentifier } from "@/lib/utils/date-classifier";
  * Used during Phase 1D validation to review match quality and inform tuning.
  */
 export async function GET(request: NextRequest) {
+  const authError = validateApiKey(request);
+  if (authError) return authError;
   const week =
     request.nextUrl.searchParams.get("week") || getWeekIdentifier(new Date());
 

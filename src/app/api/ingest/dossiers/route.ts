@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { extractAndUpsertProfile } from "@/lib/ingest/extract-and-upsert";
 import { downloadFile } from "@/lib/clients/google-drive";
 import { parseDocxToText } from "@/lib/utils/docx-parser";
+import { validateApiKey } from "@/lib/utils/api-auth";
 import { z } from "zod";
 
 const PasteRequestSchema = z.object({
@@ -22,6 +23,9 @@ const IngestRequestSchema = z.discriminatedUnion("mode", [
 ]);
 
 export async function POST(request: NextRequest) {
+  const authError = validateApiKey(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
 
