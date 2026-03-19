@@ -1,0 +1,116 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model PartnerProfile {
+  id                 String   @id @default(uuid())
+  name               String
+  company            String
+  title              String
+
+  // Core matching dimensions
+  industries         String[]
+  servicesOffered    String[]
+  targetClients      String
+  geographicFocus    String[]
+  companyStage       String?
+
+  // Deep matching context
+  keyStrengths       String[]
+  uniquePositioning  String
+  currentChallenges  String[]
+  idealIntroProfile  String
+  communicationStyle String?
+
+  // Purpose-built ~500 token summary for batch matching prompts
+  matchingSummary    String
+
+  // Ingestion metadata
+  sourceType         String   // "drive_import" | "manual_paste"
+  sourceReference    String?  // Drive file ID or "pasted_2026-03-01"
+  lastExtractedAt    DateTime
+  extractionModel    String
+
+  matchResults       MatchResult[]
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([name, company])
+}
+
+model NewsletterOpportunity {
+  id               String   @id // e.g. "2026-W09-001"
+  newsletterIssue  String        // "Issue #44"
+  newsletterDate   DateTime      // Publish date
+  weekIdentifier   String        // "2026-W09"
+
+  category         String        // From the "*the*" label
+  title            String
+  description      String
+  industries       String[]
+  relevantFor      String
+
+  // Date handling
+  eventDate        DateTime?
+  deadline         DateTime?
+  dateConfidence   String        // "confirmed" | "inferred" | "unknown"
+  dateDisplayText  String        // Human-readable
+  defaultExpiry    DateTime      // Auto-computed expiry
+
+  // Status (human-overridable via Google Sheet)
+  status           String   @default("active") // "active" | "expired" | "needs_review"
+
+  sourceUrl        String?
+  contactMethod    String
+
+  matchResults     MatchResult[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([weekIdentifier])
+  @@index([status])
+}
+
+model MatchResult {
+  id                   String   @id @default(uuid())
+
+  opportunityId        String
+  opportunity          NewsletterOpportunity @relation(fields: [opportunityId], references: [id])
+
+  partnerId            String
+  partner              PartnerProfile @relation(fields: [partnerId], references: [id])
+
+  confidenceScore      Float
+  rationale            String
+  internalLanguage     String
+  clientFacingLanguage String
+
+  matchRunId           String
+  matchRun             MatchRun @relation(fields: [matchRunId], references: [id])
+
+  createdAt            DateTime @default(now())
+
+  @@unique([opportunityId, partnerId, matchRunId])
+}
+
+model MatchRun {
+  id               String    @id @default(uuid())
+  weekIdentifier   String    @unique // "2026-W09"
+  status           String    // "running" | "completed" | "failed"
+  opportunityCount Int
+  matchCount       Int       @default(0)
+  model            String    // "claude-sonnet-4-5-20250514"
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  errorMessage     String?
+
+  matchResults     MatchResult[]
+}
