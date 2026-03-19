@@ -226,6 +226,201 @@ export function formatSheetReminder(
   return blocks;
 }
 
+// --- Disco Matching Formatter (Phase 2) ---
+
+import type { DiscoMatchSummary } from "@/lib/matching/disco-engine";
+import type {
+  NeedToOpportunityMatch,
+  OfferToPartnerMatch,
+  Need,
+  Offer,
+} from "@/schemas/disco-transcript";
+
+interface DiscoFormatInput {
+  summary: DiscoMatchSummary;
+  needs: Need[];
+  offers: Offer[];
+}
+
+export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[] {
+  const { summary, needs, offers } = input;
+  const blocks: KnownBlock[] = [];
+
+  // Header
+  blocks.push({
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: `Disco Matches — ${summary.meetingTitle}`,
+    },
+  });
+
+  const personLabel = [
+    summary.primaryPerson.name,
+    summary.primaryPerson.company ? `@ ${summary.primaryPerson.company}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: personLabel,
+      },
+    ],
+  });
+
+  blocks.push({ type: "divider" });
+
+  // --- Section: Needs → Opportunities ---
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "*What They Need \u2192 Matching Opportunities*",
+    },
+  });
+
+  if (summary.needToOpportunityMatches.length === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "_No current opportunities match these needs._",
+      },
+    });
+  } else {
+    // Group by needIndex
+    const matchesByNeed = new Map<number, NeedToOpportunityMatch[]>();
+    for (const m of summary.needToOpportunityMatches) {
+      const existing = matchesByNeed.get(m.needIndex) || [];
+      existing.push(m);
+      matchesByNeed.set(m.needIndex, existing);
+    }
+
+    for (const [needIdx, matches] of matchesByNeed) {
+      const need = needs[needIdx];
+      if (need) {
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `> :mag: *Need:* "${need.statement}" _(urgency: ${need.urgency})_`,
+          },
+        });
+      }
+
+      for (const match of matches.sort(
+        (a, b) => b.confidenceScore - a.confidenceScore
+      )) {
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: [
+              `> \u2192 *${match.opportunityTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+              `>   _${match.rationale}_`,
+              `>   :speech_balloon: "${match.clientFacingLanguage}"`,
+            ].join("\n"),
+          },
+        });
+      }
+    }
+  }
+
+  blocks.push({ type: "divider" });
+
+  // --- Section: Offers → Partners ---
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "*What They Offer \u2192 Partners Who'd Benefit*",
+    },
+  });
+
+  if (summary.offerToPartnerMatches.length === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "_No partner matches for these offerings._",
+      },
+    });
+  } else {
+    const matchesByOffer = new Map<number, OfferToPartnerMatch[]>();
+    for (const m of summary.offerToPartnerMatches) {
+      const existing = matchesByOffer.get(m.offerIndex) || [];
+      existing.push(m);
+      matchesByOffer.set(m.offerIndex, existing);
+    }
+
+    for (const [offerIdx, matches] of matchesByOffer) {
+      const offer = offers[offerIdx];
+      if (offer) {
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `> :bulb: *Offers:* "${offer.statement}" _(${offer.specificity})_`,
+          },
+        });
+      }
+
+      for (const match of matches.sort(
+        (a, b) => b.confidenceScore - a.confidenceScore
+      )) {
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: [
+              `> \u2192 *${match.partnerName}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+              `>   _${match.rationale}_`,
+              `>   :speech_balloon: "${match.clientFacingLanguage}"`,
+            ].join("\n"),
+          },
+        });
+      }
+    }
+  }
+
+  blocks.push({ type: "divider" });
+
+  // --- Section: Intro-Worthiness ---
+  const iw = input.summary.extraction.introWorthiness;
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: [
+        "*Intro-Worthiness*",
+        `Score: ${iw.score.toFixed(2)} | ${iw.rationale}`,
+        iw.suggestedTopics.length > 0
+          ? `Suggested intro topics: ${iw.suggestedTopics.join(", ")}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  });
+
+  blocks.push({ type: "divider" });
+
+  // --- Summary ---
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*Summary:* ${summary.needToOpportunityMatches.length} need\u2192opportunity matches, ${summary.offerToPartnerMatches.length} offer\u2192partner matches`,
+    },
+  });
+
+  return blocks;
+}
+
 export async function postSlackMessage(blocks: KnownBlock[]): Promise<void> {
   if (!CHANNEL) {
     console.log("SLACK_CHANNEL_MATCHES not set, logging blocks instead:");

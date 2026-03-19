@@ -114,3 +114,43 @@ model MatchRun {
 
   matchResults     MatchResult[]
 }
+
+// Phase 2: Disco Matching
+
+model ProcessedMeeting {
+  id                     String   @id @default(uuid())
+  firefliesTranscriptId  String   @unique
+  meetingTitle            String
+  meetingDate             DateTime
+  participants            String[]
+
+  transcriptText         String   // Full text for audit
+  extractedData          Json?    // Needs/offers/intro-worthiness
+
+  status                 String   // "processing" | "completed" | "failed"
+  errorMessage           String?
+  model                  String   // Which Claude model was used
+  processedAt            DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  discoMatchResults      DiscoMatchResult[]
+}
+
+model DiscoMatchResult {
+  id                   String   @id @default(uuid())
+
+  processedMeetingId   String
+  processedMeeting     ProcessedMeeting @relation(fields: [processedMeetingId], references: [id])
+
+  direction            String   // "need_to_opportunity" | "offer_to_partner"
+  sourceStatement      String   // The need or offer being matched
+  targetId             String   // opportunityId or partnerId
+  confidenceScore      Float
+  rationale            String
+  clientFacingLanguage String
+
+  createdAt            DateTime @default(now())
+
+  @@index([processedMeetingId])
+}
