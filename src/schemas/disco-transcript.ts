@@ -58,6 +58,7 @@ export const OfferToPartnerMatchSchema = z.object({
   confidenceScore: z.number().min(0).max(1),
   rationale: z.string(),
   clientFacingLanguage: z.string(),
+  introDraftEmail: z.string().optional(),
 });
 
 export const NeedToOpportunityResponseSchema = z.object({

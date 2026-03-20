@@ -101,9 +101,10 @@ INSTRUCTIONS:
 5. A single offer can match multiple partners.
 6. If no partners would benefit from an offer, skip it.
 7. Sort matches by confidence score, highest first.
+8. For matches with confidence >= 0.7, include an "introDraftEmail" field: a ready-to-send intro email with subject line and body. Write it so any team member can send it — use [Your name] as the sign-off placeholder. The tone should be warm, professional, and specific to the connection being made.
 
 Return JSON in this exact format:
-{"matches": [{"offerIndex": 0, "partnerName": "Exact Name As Listed", "confidenceScore": 0.85, "rationale": "2-3 sentences explaining why this intro would be valuable", "clientFacingLanguage": "2-3 sentences to share with both parties about why they should connect"}]}
+{"matches": [{"offerIndex": 0, "partnerName": "Exact Name As Listed", "confidenceScore": 0.85, "rationale": "2-3 sentences explaining why this intro would be valuable", "clientFacingLanguage": "2-3 sentences to share with both parties about why they should connect", "introDraftEmail": "Subject: Quick intro — [Person] x [Partner]\\n\\nHi [Partner first name],\\n\\n[2-3 paragraph email body]\\n\\nBest,\\n[Your name]"}]}
 
 Return ONLY the JSON object. No other text.`;
 

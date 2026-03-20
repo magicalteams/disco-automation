@@ -68,60 +68,73 @@ export function formatMatchesToSlack(
 
   blocks.push({ type: "divider" });
 
-  // Group matches by opportunity
-  const matchesByOpp = new Map<string, MatchData[]>();
+  // Build lookup for opportunities by ID
+  const oppLookup = new Map<string, NewsletterOpportunity>();
+  for (const opp of opportunities) {
+    oppLookup.set(opp.id, opp);
+  }
+
+  // Group matches by partner
+  const matchesByPartner = new Map<string, MatchData[]>();
   for (const m of matches) {
-    const existing = matchesByOpp.get(m.opportunityId) || [];
+    const existing = matchesByPartner.get(m.partnerName) || [];
     existing.push(m);
-    matchesByOpp.set(m.opportunityId, existing);
+    matchesByPartner.set(m.partnerName, existing);
   }
 
   const matchedPartnerNames = new Set<string>();
   const matchedOppIds = new Set<string>();
 
-  for (const opp of opportunities) {
-    const oppMatches = matchesByOpp.get(opp.id);
-    if (!oppMatches || oppMatches.length === 0) continue;
+  // Sort partners alphabetically for consistent output
+  const sortedPartnerNames = [...matchesByPartner.keys()].sort();
 
-    matchedOppIds.add(opp.id);
-    const emoji = getEmoji(opp.category);
+  for (const partnerName of sortedPartnerNames) {
+    const partnerMatches = matchesByPartner.get(partnerName)!;
+    matchedPartnerNames.add(partnerName);
 
-    // Opportunity header
+    const partner = allPartners.find((p) => p.name === partnerName);
+    const partnerLabel = partner
+      ? `${partner.name} / ${partner.company}`
+      : partnerName;
+
+    // Partner header
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `${emoji} *${opp.title}*\n_Category: ${opp.category} | ${opp.dateDisplayText}_`,
+        text: `*${partnerLabel}* — ${partnerMatches.length} matching ${partnerMatches.length === 1 ? "opportunity" : "opportunities"}`,
       },
     });
 
-    // Each match
-    for (const match of oppMatches.sort((a, b) => b.confidenceScore - a.confidenceScore)) {
-      matchedPartnerNames.add(match.partnerName);
-      const partner = allPartners.find((p) => p.name === match.partnerName);
-      const partnerLabel = partner
-        ? `${partner.name} / ${partner.company}`
-        : match.partnerName;
+    // Each matching opportunity (sorted by confidence)
+    for (const match of partnerMatches.sort((a, b) => b.confidenceScore - a.confidenceScore)) {
+      matchedOppIds.add(match.opportunityId);
+      const opp = oppLookup.get(match.opportunityId);
+      const emoji = opp ? getEmoji(opp.category) : "\ud83d\udccc";
+      const oppTitle = opp?.title || match.opportunityTitle;
+      const dateInfo = opp?.dateDisplayText || "";
+      const category = opp?.category || "";
 
       const dateWarning =
-        opp.dateConfidence === "unknown"
-          ? "\n\n:warning: No set deadline — open until filled"
+        opp?.dateConfidence === "unknown"
+          ? "\n> :warning: No set deadline — open until filled"
           : "";
-      const link = opp.sourceUrl ? `\n:link: ${opp.sourceUrl}` : "";
+      const link = opp?.sourceUrl ? `\n> :link: ${opp.sourceUrl}` : "";
 
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
           text: [
-            `> *\u2192 ${partnerLabel}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+            `> ${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+            category || dateInfo ? `> _${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
             `> _Why:_ ${match.rationale}`,
             `>`,
             `> :speech_balloon: *Pod Language:* "${match.internalLanguage}"`,
             `>`,
             `> :speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
-            dateWarning ? `> ${dateWarning}` : null,
-            link ? `> ${link}` : null,
+            dateWarning || null,
+            link || null,
           ]
             .filter(Boolean)
             .join("\n"),
@@ -176,18 +189,16 @@ export function formatSheetReminder(
     type: "header",
     text: {
       type: "plain_text",
-      text: "Review Newsletter Opportunities",
+      text: "Weekly Opportunity Review",
     },
   });
 
   blocks.push({
-    type: "context",
-    elements: [
-      {
-        type: "mrkdwn",
-        text: `Week ${weekIdentifier} | Weekly matching runs at 5 PM UTC today. Please review opportunity statuses before then.`,
-      },
-    ],
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*${opportunityCount} opportunities* from this week's newsletter are ready for review (${weekIdentifier}).`,
+    },
   });
 
   blocks.push({ type: "divider" });
@@ -196,19 +207,16 @@ export function formatSheetReminder(
     type: "section",
     text: {
       type: "mrkdwn",
-      text: `*${opportunityCount} opportunities* are queued for matching this week.\n\n:point_right: <${sheetUrl}|Open the Opportunities Sheet> to review statuses.`,
-    },
-  });
-
-  blocks.push({
-    type: "section",
-    text: {
-      type: "mrkdwn",
       text: [
-        "*Status legend:*",
-        "\u2022 `active` \u2014 Included in matching (default)",
-        "\u2022 `expired` \u2014 Skipped, opportunity has passed",
-        "\u2022 `needs_review` \u2014 Skipped, flagged for follow-up",
+        "*What is this?*",
+        "Each week, newsletter opportunities are extracted and matched against our client partners. Before matching runs automatically at *5 PM UTC today*, you have a chance to review and flag any opportunities that aren't relevant.",
+        "",
+        "*What to do:*",
+        `1. <${sheetUrl}|Open the Opportunities Sheet>`,
+        "2. Scan the *Status* column \u2014 everything defaults to `active`",
+        "3. Change any stale or irrelevant opportunities to `expired`",
+        "4. Flag anything uncertain as `needs_review` (it will be skipped this week)",
+        "5. That's it \u2014 matching runs automatically at 5 PM UTC",
       ].join("\n"),
     },
   });
@@ -218,7 +226,7 @@ export function formatSheetReminder(
     elements: [
       {
         type: "mrkdwn",
-        text: "Only change the *Status* column. All other columns are auto-populated.",
+        text: "Only change the *Status* column. All other columns are auto-populated. If you don't change anything, all opportunities will be matched as-is.",
       },
     ],
   });
@@ -372,17 +380,29 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
       for (const match of matches.sort(
         (a, b) => b.confidenceScore - a.confidenceScore
       )) {
+        const matchLines = [
+          `> \u2192 *${match.partnerName}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+          `>   _${match.rationale}_`,
+          `>   :speech_balloon: "${match.clientFacingLanguage}"`,
+        ];
+
         blocks.push({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: [
-              `> \u2192 *${match.partnerName}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
-              `>   _${match.rationale}_`,
-              `>   :speech_balloon: "${match.clientFacingLanguage}"`,
-            ].join("\n"),
+            text: matchLines.join("\n"),
           },
         });
+
+        if (match.introDraftEmail) {
+          blocks.push({
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `:email: *Draft Intro Email:*\n\`\`\`${match.introDraftEmail}\`\`\``,
+            },
+          });
+        }
       }
     }
   }
