@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/clients/db";
 import { callClaude, getModelId } from "@/lib/clients/anthropic";
-import { buildBatchMatchingPrompt } from "@/lib/prompts/match-opportunities";
+import { buildFullMatchingPrompt } from "@/lib/prompts/match-opportunities";
 import { BatchMatchResponseSchema } from "@/schemas/match-result";
 import { formatMatchesToSlack, postSlackMessage } from "@/lib/slack/formatter";
 
@@ -119,86 +119,84 @@ export async function runWeeklyMatching(
       outreachDraftEmail?: string;
     }> = [];
 
-    // 5. Match all opportunities in parallel (stay within Hobby 60s limit)
+    // 5. Match all opportunities in a single Claude call (fits within rate limits + 60s)
+    console.log(`Matching ${opportunities.length} opportunities against ${partners.length} partners...`);
+
+    const { system, user } = buildFullMatchingPrompt(
+      opportunities.map((opp) => ({
+        title: opp.title,
+        category: opp.category,
+        description: opp.description,
+        industries: opp.industries,
+        relevantFor: opp.relevantFor,
+        dateDisplayText: opp.dateDisplayText,
+        contactMethod: opp.contactMethod,
+        sourceUrl: opp.sourceUrl,
+      })),
+      partners.map((p) => ({
+        name: p.name,
+        company: p.company,
+        matchingSummary: p.matchingSummary,
+      })),
+      threshold
+    );
+
+    const rawResponse = await callClaude(user, { system, model: "sonnet", maxTokens: 8192 });
+
+    // Parse JSON from response (handle potential markdown fences)
+    let jsonStr = rawResponse.trim();
+    if (jsonStr.startsWith("```")) {
+      jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+    }
+
+    const parsed = BatchMatchResponseSchema.safeParse(JSON.parse(jsonStr));
+    if (!parsed.success) {
+      throw new Error(`Failed to parse match response: ${parsed.error.message}`);
+    }
+
+    // Resolve opportunity titles and partner names to IDs
     const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+    const oppByTitle = new Map(
+      opportunities.map((o) => [normalize(o.title), o])
+    );
 
-    const matchTasks = opportunities.map(async (opp) => {
-      console.log(`Matching: "${opp.title}" against ${partners.length} partners...`);
+    for (const match of parsed.data.matches) {
+      if (match.confidenceScore < threshold) continue;
 
-      const { system, user } = buildBatchMatchingPrompt(
-        {
-          title: opp.title,
-          category: opp.category,
-          description: opp.description,
-          industries: opp.industries,
-          relevantFor: opp.relevantFor,
-          dateDisplayText: opp.dateDisplayText,
-          contactMethod: opp.contactMethod,
-          sourceUrl: opp.sourceUrl,
-        },
-        partners.map((p) => ({
-          name: p.name,
-          company: p.company,
-          matchingSummary: p.matchingSummary,
-        })),
-        threshold
-      );
-
-      try {
-        const rawResponse = await callClaude(user, { system, model: "sonnet", maxTokens: 4096 });
-
-        // Parse JSON from response (handle potential markdown fences)
-        let jsonStr = rawResponse.trim();
-        if (jsonStr.startsWith("```")) {
-          jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-        }
-
-        const parsed = BatchMatchResponseSchema.safeParse(JSON.parse(jsonStr));
-        if (!parsed.success) {
-          console.error(`Failed to parse matches for "${opp.title}":`, parsed.error.message);
-          return [];
-        }
-
-        // Resolve partner names to IDs and filter by threshold
-        const oppMatches: typeof allMatches = [];
-        for (const match of parsed.data.matches) {
-          if (match.confidenceScore < threshold) continue;
-
-          const matchName = normalize(match.partnerName);
-          const partner = partners.find((p) => {
-            const dbName = normalize(p.name);
-            return dbName === matchName || matchName.startsWith(dbName);
-          });
-          if (!partner) {
-            console.warn(
-              `Partner "${match.partnerName}" not found in database (normalized: "${matchName}"), skipping. ` +
-              `Available: ${partners.map((p) => p.name).join(", ")}`
-            );
-            continue;
-          }
-
-          oppMatches.push({
-            opportunityId: opp.id,
-            opportunityTitle: opp.title,
-            partnerId: partner.id,
-            partnerName: match.partnerName,
-            confidenceScore: match.confidenceScore,
-            rationale: match.rationale,
-            internalLanguage: match.internalLanguage,
-            clientFacingLanguage: match.clientFacingLanguage,
-            outreachDraftEmail: match.outreachDraftEmail,
-          });
-        }
-        return oppMatches;
-      } catch (err) {
-        console.error(`Matching failed for "${opp.title}":`, err);
-        return [];
+      // Resolve opportunity
+      const oppTitle = normalize(match.opportunityTitle);
+      const opp = oppByTitle.get(oppTitle) ??
+        opportunities.find((o) => oppTitle.startsWith(normalize(o.title)));
+      if (!opp) {
+        console.warn(`Opportunity "${match.opportunityTitle}" not found, skipping`);
+        continue;
       }
-    });
 
-    const results = await Promise.all(matchTasks);
-    for (const oppMatches of results) {
-      allMatches.push(...oppMatches);
+      // Resolve partner
+      const matchName = normalize(match.partnerName);
+      const partner = partners.find((p) => {
+        const dbName = normalize(p.name);
+        return dbName === matchName || matchName.startsWith(dbName);
+      });
+      if (!partner) {
+        console.warn(
+          `Partner "${match.partnerName}" not found in database (normalized: "${matchName}"), skipping. ` +
+          `Available: ${partners.map((p) => p.name).join(", ")}`
+        );
+        continue;
+      }
+
+      allMatches.push({
+        opportunityId: opp.id,
+        opportunityTitle: opp.title,
+        partnerId: partner.id,
+        partnerName: match.partnerName,
+        confidenceScore: match.confidenceScore,
+        rationale: match.rationale,
+        internalLanguage: match.internalLanguage,
+        clientFacingLanguage: match.clientFacingLanguage,
+        outreachDraftEmail: match.outreachDraftEmail,
+      });
     }
 
     // 6. Compute quality metrics

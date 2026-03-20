@@ -117,6 +117,7 @@ describe("BatchMatchResponseSchema", () => {
     const result = BatchMatchResponseSchema.safeParse({
       matches: [
         {
+          opportunityTitle: "AI Summit Speaker Call",
           partnerName: "Jane Doe",
           confidenceScore: 0.85,
           rationale: "Strong alignment with AI focus",
@@ -137,6 +138,7 @@ describe("BatchMatchResponseSchema", () => {
     const result = BatchMatchResponseSchema.safeParse({
       matches: [
         {
+          opportunityTitle: "Test Opportunity",
           partnerName: "Jane Doe",
           confidenceScore: 1.5,
           rationale: "Test",
