@@ -80,7 +80,7 @@ export async function runWeeklyMatching(
   }
 
   // 4. Create or update the match run record (skip in dry-run mode)
-  const modelId = getModelId("sonnet");
+  const modelId = getModelId("haiku");
   let matchRun: { id: string } | null = null;
   if (!options.dryRun) {
     matchRun = existing
@@ -141,7 +141,7 @@ export async function runWeeklyMatching(
       threshold
     );
 
-    const rawResponse = await callClaude(user, { system, model: "sonnet", maxTokens: 8192 });
+    const rawResponse = await callClaude(user, { system, model: "haiku", maxTokens: 8192, retries: 0 });
 
     // Parse JSON from response (handle potential markdown fences)
     let jsonStr = rawResponse.trim();
