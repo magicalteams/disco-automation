@@ -33,10 +33,16 @@ export async function verifySlackRequest(
   const baseString = `v0:${timestamp}:${rawBody}`;
   const computed = `v0=${createHmac("sha256", signingSecret).update(baseString).digest("hex")}`;
 
-  const valid = timingSafeEqual(
-    Buffer.from(computed),
-    Buffer.from(signature)
-  );
+  const computedBuf = Buffer.from(computed);
+  const signatureBuf = Buffer.from(signature);
+
+  // timingSafeEqual throws if lengths differ — guard against that
+  if (computedBuf.length !== signatureBuf.length) {
+    console.error("Slack signature length mismatch — check SLACK_SIGNING_SECRET");
+    return { valid: false, body: new URLSearchParams() };
+  }
+
+  const valid = timingSafeEqual(computedBuf, signatureBuf);
 
   return { valid, body: new URLSearchParams(rawBody) };
 }

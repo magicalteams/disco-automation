@@ -1,7 +1,8 @@
-import { NextRequest } from "next/server";
-import { waitUntil } from "@vercel/functions";
+import { NextRequest, after } from "next/server";
 import { verifySlackRequest } from "@/lib/slack/verify";
 import { dispatch } from "@/lib/slack/commands";
+
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   const { valid, body } = await verifySlackRequest(request);
@@ -23,8 +24,8 @@ export async function POST(request: NextRequest) {
 
   const { ack, process } = dispatch(command, text, responseUrl, userId);
 
-  // Schedule background processing — Vercel keeps the function alive
-  waitUntil(process());
+  // Schedule background processing — Next.js 15.1+ keeps the function alive
+  after(process);
 
   // Immediate acknowledgment (must respond within 3 seconds)
   return Response.json({ response_type: "ephemeral", text: ack });
