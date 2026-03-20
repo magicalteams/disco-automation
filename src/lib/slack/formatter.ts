@@ -12,6 +12,7 @@ interface MatchData {
   rationale: string;
   internalLanguage: string;
   clientFacingLanguage: string;
+  outreachDraftEmail?: string;
 }
 
 interface PartnerInfo {
@@ -38,6 +39,26 @@ const CATEGORY_EMOJI: Record<string, string> = {
 
 function getEmoji(category: string): string {
   return CATEGORY_EMOJI[category] || "\ud83d\udccc";
+}
+
+function buildReviewFooter(): KnownBlock[] {
+  const reviewTag = process.env.SLACK_REVIEW_TAG;
+  const tagText = reviewTag
+    ? `${reviewTag} — please review before sending.`
+    : "Tag your Strategist/pod lead for review before sending.";
+
+  return [
+    { type: "divider" },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `*Review required* — These are drafts. ${tagText} Do not send without a review pass.`,
+        },
+      ],
+    },
+  ];
 }
 
 export function formatMatchesToSlack(
@@ -140,6 +161,16 @@ export function formatMatchesToSlack(
             .join("\n"),
         },
       });
+
+      if (match.outreachDraftEmail) {
+        blocks.push({
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `:email: *Draft Outreach Email:*\n\`\`\`${match.outreachDraftEmail}\`\`\``,
+          },
+        });
+      }
     }
 
     blocks.push({ type: "divider" });
@@ -174,6 +205,8 @@ export function formatMatchesToSlack(
       text: summaryLines.join("\n"),
     },
   });
+
+  blocks.push(...buildReviewFooter());
 
   return blocks;
 }
@@ -437,6 +470,8 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
       text: `*Summary:* ${summary.needToOpportunityMatches.length} need\u2192opportunity matches, ${summary.offerToPartnerMatches.length} offer\u2192partner matches`,
     },
   });
+
+  blocks.push(...buildReviewFooter());
 
   return blocks;
 }

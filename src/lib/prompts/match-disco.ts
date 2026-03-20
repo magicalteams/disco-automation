@@ -101,10 +101,17 @@ INSTRUCTIONS:
 5. A single offer can match multiple partners.
 6. If no partners would benefit from an offer, skip it.
 7. Sort matches by confidence score, highest first.
-8. For matches with confidence >= 0.7, include an "introDraftEmail" field: a ready-to-send intro email with subject line and body. Write it so any team member can send it — use [Your name] as the sign-off placeholder. The tone should be warm, professional, and specific to the connection being made.
+8. For matches with confidence >= 0.7, include an "introDraftEmail" field: a double-sided intro email following this format:
+   - Subject line: "Intro"
+   - Opening: "Hey [Prospect name] and [Partner name]," followed by "Connecting you two because this feels like a great match."
+   - Paragraph 1: Introduce the partner to the prospect. "[Partner name] — Meet [Prospect name], [title/company] ([1-2 key credentials]). [Their specific need/situation the partner can help with]."
+   - Paragraph 2: Introduce the prospect to the partner. "[Prospect name] — Meet [Partner name], [title/company] ([1-2 key credentials]). [How they can help with the specific need]."
+   - Closing connector: State explicitly who helps whom and why. Then: "I'll let you both take it from here. Happy connecting!"
+   - Sign-off: "Cheers, [Your name]"
+   - Keep it ~100-150 words total. Direct, warm, specific about expertise and needs. No em dashes, no generic business language. Do not oversell the connection.
 
 Return JSON in this exact format:
-{"matches": [{"offerIndex": 0, "partnerName": "Exact Name As Listed", "confidenceScore": 0.85, "rationale": "2-3 sentences explaining why this intro would be valuable", "clientFacingLanguage": "2-3 sentences to share with both parties about why they should connect", "introDraftEmail": "Subject: Quick intro — [Person] x [Partner]\\n\\nHi [Partner first name],\\n\\n[2-3 paragraph email body]\\n\\nBest,\\n[Your name]"}]}
+{"matches": [{"offerIndex": 0, "partnerName": "Exact Name As Listed", "confidenceScore": 0.85, "rationale": "2-3 sentences explaining why this intro would be valuable", "clientFacingLanguage": "2-3 sentences to share with both parties about why they should connect", "introDraftEmail": "Subject: Intro\\n\\nHey [Prospect] and [Partner],\\n\\nConnecting you two because this feels like a great match.\\n\\n[Partner] — Meet [Prospect], [title/company] ([credentials]). [Need/situation].\\n\\n[Prospect] — Meet [Partner], [title/company] ([credentials]). [How they help].\\n\\n[Explicit connection statement]. I'll let you both take it from here. Happy connecting!\\n\\nCheers,\\n[Your name]"}]}
 
 Return ONLY the JSON object. No other text.`;
 

@@ -6,6 +6,7 @@ export const MatchOutputSchema = z.object({
   rationale: z.string(),
   internalLanguage: z.string(),
   clientFacingLanguage: z.string(),
+  outreachDraftEmail: z.string().optional(),
 });
 
 export type MatchOutput = z.infer<typeof MatchOutputSchema>;

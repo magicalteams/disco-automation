@@ -59,9 +59,10 @@ INSTRUCTIONS:
 4. Consider non-obvious connections: a partner's current challenges might make an opportunity relevant even without direct industry overlap.
 5. If NO partners are genuinely relevant, return an empty array. That's better than bad matches.
 6. Sort matches by confidence score, highest first.
+7. For matches with confidence >= 0.7, also include an "outreachDraftEmail" field: a ready-to-send email from the admin to the client partner about this opportunity. Format: Subject line + body. The email should be warm, direct, and specific — reference the partner's expertise and explain why this opportunity is relevant to them. Keep it concise (100-200 words). Use [Your name] as the sign-off placeholder. Do not use em dashes or the word "just". Do not use generic business language.
 
 Return JSON in this exact format:
-{"matches": [{"partnerName": "...", "confidenceScore": 0.85, "rationale": "...", "internalLanguage": "...", "clientFacingLanguage": "..."}]}
+{"matches": [{"partnerName": "...", "confidenceScore": 0.85, "rationale": "...", "internalLanguage": "...", "clientFacingLanguage": "...", "outreachDraftEmail": "Subject: [Opportunity] — thought of you\\n\\nHey [Partner first name],\\n\\n[2-3 paragraph body]\\n\\nBest,\\n[Your name]"}]}
 
 Return ONLY the JSON object. No other text.`;
 

@@ -187,4 +187,5 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 - **App URL**: Your Vercel deployment URL
 - **API Key**: The `API_KEY` value from your environment variables
 - **Slack Channel**: Matches are posted to the configured `SLACK_CHANNEL_MATCHES`
+- **Slack Review Tag** (optional): Set `SLACK_REVIEW_TAG` to a Slack user or group mention (e.g. `<@U12345>`) to tag a reviewer on every match output. If not set, a generic "Tag your Strategist" reminder appears.
 - **Google Sheet**: Opportunity review sheet (linked in the Monday Slack reminder)

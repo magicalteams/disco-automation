@@ -36,6 +36,7 @@ interface MatchRunSummary {
     rationale: string;
     internalLanguage: string;
     clientFacingLanguage: string;
+    outreachDraftEmail?: string;
   }>;
 }
 
@@ -115,6 +116,7 @@ export async function runWeeklyMatching(
       rationale: string;
       internalLanguage: string;
       clientFacingLanguage: string;
+      outreachDraftEmail?: string;
     }> = [];
 
     // 5. For each opportunity, run batch matching
@@ -180,6 +182,7 @@ export async function runWeeklyMatching(
           rationale: match.rationale,
           internalLanguage: match.internalLanguage,
           clientFacingLanguage: match.clientFacingLanguage,
+          outreachDraftEmail: match.outreachDraftEmail,
         });
       }
     }
@@ -250,6 +253,7 @@ export async function runWeeklyMatching(
         rationale: m.rationale,
         internalLanguage: m.internalLanguage,
         clientFacingLanguage: m.clientFacingLanguage,
+        outreachDraftEmail: m.outreachDraftEmail,
       }));
     }
 
