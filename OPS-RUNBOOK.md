@@ -11,7 +11,7 @@ This is the admin guide for running the weekly matching automation and disco mat
 | Review opportunity sheet | Monday between 2-5 PM UTC (after Slack reminder) | Admin or team |
 | Weekly matching | Runs automatically Monday 5 PM UTC | Automated |
 | Review match drafts | After matching posts to Slack | Admin + Strategist |
-| Disco matching | After any discovery call (1-3/month) | Admin (triggered manually) |
+| Disco matching | After any discovery call (1-3/month) | Admin (via `/disco` in Slack) |
 
 ---
 
@@ -41,22 +41,6 @@ Every client partner needs a dossier before they can be matched against opportun
 
 6. The next time the batch import runs (or you can trigger it manually), the dossier will be extracted and loaded into the matching database
 
-### Manual Single-Partner Import (Alternative)
-
-If you have the dossier text ready and want to load it immediately without saving to Drive:
-
-```bash
-curl -X POST https://[VERCEL_URL]/api/ingest/dossiers \
-  -H "Authorization: Bearer [API_KEY]" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "mode": "paste",
-    "rawText": "[paste the full dossier text here]",
-    "name": "Partner Full Name",
-    "company": "Company Name"
-  }'
-```
-
 ---
 
 ## 2. Weekly Newsletter Process
@@ -72,19 +56,6 @@ The system automatically:
 4. Saves opportunities to the database
 5. Pushes them to the Google Sheet for review
 6. Posts a Slack confirmation (or error alert if something goes wrong)
-
-**No manual action needed.** If the automation fails (you'll see a Slack error), fall back to manual submission:
-
-```bash
-curl -X POST https://[VERCEL_URL]/api/extract/newsletter \
-  -H "Authorization: Bearer [API_KEY]" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "markdown": "[paste the newsletter content here]",
-    "issueNumber": 48,
-    "publishDate": "2026-03-16"
-  }'
-```
 
 ### Step 2: Review Opportunities (Monday 2-5 PM UTC)
 
@@ -116,21 +87,14 @@ No action needed until you see the results — then review drafts and submit for
 
 ### Manual Trigger (if needed)
 
-To run matching outside the cron schedule:
+To run matching outside the cron schedule, use the Slack slash command:
 
-```bash
-# Dry run (no Slack post, just see results)
-curl -X POST https://[VERCEL_URL]/api/match/weekly \
-  -H "Authorization: Bearer [API_KEY]" \
-  -H "Content-Type: application/json" \
-  -d '{"dryRun": true}'
-
-# Live run (posts to Slack)
-curl -X POST https://[VERCEL_URL]/api/match/weekly \
-  -H "Authorization: Bearer [API_KEY]" \
-  -H "Content-Type: application/json" \
-  -d '{}'
 ```
+/match           — Run matching for this week (posts results to channel)
+/match dry-run   — Preview matches without writing to DB or posting
+```
+
+See **Section 5: Slack Commands** for full details.
 
 ---
 
@@ -138,32 +102,19 @@ curl -X POST https://[VERCEL_URL]/api/match/weekly \
 
 After a discovery call, the system can analyze the Fireflies transcript and match the person's needs against active opportunities, and their offers against existing partners.
 
-### Step 1: Find the Transcript ID
+### How to Run Disco Matching
 
-List recent Fireflies meetings:
+1. In Slack, type `/disco` to see recent meetings:
 
-```bash
-curl https://[VERCEL_URL]/api/meetings/recent \
-  -H "Authorization: Bearer [API_KEY]"
+```
+/disco              — List recent meetings from Fireflies
+/disco Jane         — Search meetings by name or title
+/disco [id]         — Process a specific transcript
 ```
 
-Find the meeting and copy its transcript ID.
+2. Find the meeting you want, then run `/disco [id]` with the transcript ID shown in the list.
 
-### Step 2: Process the Transcript
-
-```bash
-# Dry run first
-curl -X POST https://[VERCEL_URL]/api/match/disco \
-  -H "Authorization: Bearer [API_KEY]" \
-  -H "Content-Type: application/json" \
-  -d '{"transcriptId": "[TRANSCRIPT_ID]", "dryRun": true}'
-
-# Live run (posts to Slack)
-curl -X POST https://[VERCEL_URL]/api/match/disco \
-  -H "Authorization: Bearer [API_KEY]" \
-  -H "Content-Type: application/json" \
-  -d '{"transcriptId": "[TRANSCRIPT_ID]"}'
-```
+3. The system will process the transcript and post results to the channel.
 
 The Slack output will show:
 - What the person needs, matched to relevant opportunities
@@ -183,7 +134,38 @@ All match outputs (weekly and disco) include draft emails. These are drafts — 
 3. Tag your Strategist/pod lead for sign-off (the Slack message includes a review reminder)
 4. Only send after a Strategist has reviewed
 
-If `SLACK_REVIEW_TAG` is set in your environment, the system will automatically tag that person/group on every output. Otherwise, tag them manually.
+---
+
+## 5. Slack Commands
+
+All manual operations are available as Slack slash commands. No terminal or API keys needed.
+
+### `/disco` — Process a Discovery Call
+
+| Usage | What it does |
+|-------|-------------|
+| `/disco` | List the 10 most recent Fireflies meetings |
+| `/disco Jane` | Search meetings by participant name or title |
+| `/disco abc123def456` | Process a specific transcript and post matches |
+
+After processing, the full match output (needs, offers, intros, draft emails) appears in the channel.
+
+### `/match` — Run Weekly Matching
+
+| Usage | What it does |
+|-------|-------------|
+| `/match` | Run matching for the current week (live — writes to DB, posts to channel) |
+| `/match dry-run` | Preview matches without writing to DB or posting to channel |
+
+Before matching, the system automatically syncs any status changes from the Google Sheet and auto-expires past-due opportunities.
+
+### `/ingest` — Ingest Newsletter
+
+| Usage | What it does |
+|-------|-------------|
+| `/ingest` | Fetch the latest newsletter from RSS and extract opportunities |
+
+Use this if the Monday 11 AM automated ingestion failed, or if you need to re-trigger ingestion for any reason. If the newsletter was already ingested, it will tell you.
 
 ---
 
@@ -193,6 +175,7 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `/api/slack/commands` | POST | Slack slash commands (`/disco`, `/match`, `/ingest`) |
 | `/api/cron/newsletter-ingest` | GET | Auto-ingest newsletter from LinkedIn RSS (cron) |
 | `/api/extract/newsletter` | POST | Extract opportunities from newsletter (manual fallback) |
 | `/api/ingest/dossiers` | POST | Import a partner dossier |
@@ -208,5 +191,6 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 - **API Key**: The `API_KEY` value from your environment variables
 - **Slack Channel**: Matches are posted to the configured `SLACK_CHANNEL_MATCHES`
 - **Slack Review Tag** (optional): Set `SLACK_REVIEW_TAG` to a Slack user or group mention (e.g. `<@U12345>`) to tag a reviewer on every match output. If not set, a generic "Tag your Strategist" reminder appears.
+- **Slack Signing Secret**: Set `SLACK_SIGNING_SECRET` for slash command verification (found in Slack app settings → Basic Information → App Credentials).
 - **RSS Feed URL** (optional): Override with `RSS_FEED_URL` env var. Default: The Business Village LinkedIn newsletter RSS.
 - **Google Sheet**: Opportunity review sheet (linked in the Monday Slack reminder)
