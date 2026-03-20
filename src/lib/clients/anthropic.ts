@@ -3,8 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 const client = new Anthropic();
 
 const MODELS = {
-  opus: "claude-opus-4-6-20250415",
-  sonnet: "claude-sonnet-4-5-20250929",
+  opus: "claude-opus-4-6",
+  sonnet: "claude-sonnet-4-6",
 } as const;
 
 type ModelKey = keyof typeof MODELS;

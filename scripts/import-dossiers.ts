@@ -49,11 +49,11 @@ async function main() {
 
   // 1. List files
   const files = await listDossierFiles(folderId);
-  console.log(`Found ${files.length} .docx files in Drive folder.\n`);
+  console.log(`Found ${files.length} dossier files in Drive folder.\n`);
 
   if (files.length === 0) {
     console.log(
-      "No .docx files found. Verify the folder ID and that the service account has access."
+      "No dossier files found. Verify the folder ID and that the service account has access."
     );
     return;
   }
@@ -75,8 +75,8 @@ async function main() {
     console.log(`${progress} Processing: ${file.name}...`);
 
     try {
-      // Download
-      const buffer = await downloadFile(file.fileId);
+      // Download (exports Google Docs as .docx)
+      const buffer = await downloadFile(file.fileId, file.mimeType);
 
       // Parse .docx to text
       const rawText = await parseDocxToText(buffer);

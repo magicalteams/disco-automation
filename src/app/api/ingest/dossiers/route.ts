@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // mode === "drive"
+    // mode === "drive" — mimeType omitted; downloadFile defaults to direct download
+    // For Google Docs, callers should use the batch import script instead
     const buffer = await downloadFile(input.fileId);
     const rawText = await parseDocxToText(buffer);
 
