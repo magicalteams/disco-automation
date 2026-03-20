@@ -7,10 +7,11 @@ This is the admin guide for running the weekly matching automation and disco mat
 | Task | When | Who |
 |------|------|-----|
 | Create partner dossiers | When new partners onboard (1-3/month) | Admin |
-| Paste newsletter content | Monday morning (before 2 PM UTC) | Admin |
+| Newsletter ingestion | Runs automatically Monday 11 AM UTC | Automated |
 | Review opportunity sheet | Monday between 2-5 PM UTC (after Slack reminder) | Admin or team |
 | Weekly matching | Runs automatically Monday 5 PM UTC | Automated |
-| Disco matching | After any discovery call | Admin (triggered manually) |
+| Review match drafts | After matching posts to Slack | Admin + Strategist |
+| Disco matching | After any discovery call (1-3/month) | Admin (triggered manually) |
 
 ---
 
@@ -60,13 +61,19 @@ curl -X POST https://[VERCEL_URL]/api/ingest/dossiers \
 
 ## 2. Weekly Newsletter Process
 
-Each Monday, newsletter opportunities need to be fed into the system so they can be matched against partner profiles.
+Each Monday, newsletter opportunities are automatically ingested from the Business Village LinkedIn newsletter and matched against partner profiles.
 
-### Step 1: Extract Newsletter (Monday Morning)
+### Step 1: Newsletter Ingestion (Automated — Monday 11 AM UTC)
 
-1. Get this week's Business Village newsletter content from Cara (Flodesk email or LinkedIn newsletter)
-2. Copy the full text content
-3. Submit it to the extraction endpoint:
+The system automatically:
+1. Fetches the latest Business Village newsletter via RSS from LinkedIn
+2. Extracts the issue number and publish date
+3. Runs Claude extraction to parse each opportunity (title, category, dates, contact info)
+4. Saves opportunities to the database
+5. Pushes them to the Google Sheet for review
+6. Posts a Slack confirmation (or error alert if something goes wrong)
+
+**No manual action needed.** If the automation fails (you'll see a Slack error), fall back to manual submission:
 
 ```bash
 curl -X POST https://[VERCEL_URL]/api/extract/newsletter \
@@ -74,18 +81,10 @@ curl -X POST https://[VERCEL_URL]/api/extract/newsletter \
   -H "Content-Type: application/json" \
   -d '{
     "markdown": "[paste the newsletter content here]",
-    "issueNumber": 45,
-    "publishDate": "2026-03-24"
+    "issueNumber": 48,
+    "publishDate": "2026-03-16"
   }'
 ```
-
-- `issueNumber`: Increment from the previous week
-- `publishDate`: The Monday the newsletter was published (YYYY-MM-DD format)
-
-The system will:
-- Extract each opportunity with metadata (title, category, dates, contact info)
-- Save them to the database
-- Push them to the Google Sheet for review
 
 ### Step 2: Review Opportunities (Monday 2-5 PM UTC)
 
@@ -107,7 +106,13 @@ The system will:
 3. Match all `active` opportunities against every partner profile
 4. Post results to Slack, grouped by partner
 
-No action needed — just check Slack for the results.
+The Slack output for each partner includes:
+- Matching opportunities with confidence scores and rationale
+- Pod language (internal shorthand) and client language (shareable excerpt)
+- For high-confidence matches (0.7+): a **draft outreach email** ready to customize and send to the client partner
+- A review footer reminding you to get Strategist sign-off before sending
+
+No action needed until you see the results — then review drafts and submit for approval (see Review Process below).
 
 ### Manual Trigger (if needed)
 
@@ -163,8 +168,22 @@ curl -X POST https://[VERCEL_URL]/api/match/disco \
 The Slack output will show:
 - What the person needs, matched to relevant opportunities
 - What the person offers, matched to partners who'd benefit from an intro
-- For high-confidence intro matches: a draft email you can customize and send
+- For high-confidence intro matches (0.7+): a **double-sided intro email** addressing both parties, explaining the connection, ready to customize and send
 - An intro-worthiness assessment
+- A review footer reminding you to get Strategist sign-off before sending
+
+---
+
+## 4. Review Process
+
+All match outputs (weekly and disco) include draft emails. These are drafts — do not send without a review pass.
+
+1. Check the Slack output after matching runs
+2. Review each draft email for accuracy and tone — customize as needed
+3. Tag your Strategist/pod lead for sign-off (the Slack message includes a review reminder)
+4. Only send after a Strategist has reviewed
+
+If `SLACK_REVIEW_TAG` is set in your environment, the system will automatically tag that person/group on every output. Otherwise, tag them manually.
 
 ---
 
@@ -174,7 +193,8 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/extract/newsletter` | POST | Extract opportunities from newsletter |
+| `/api/cron/newsletter-ingest` | GET | Auto-ingest newsletter from LinkedIn RSS (cron) |
+| `/api/extract/newsletter` | POST | Extract opportunities from newsletter (manual fallback) |
 | `/api/ingest/dossiers` | POST | Import a partner dossier |
 | `/api/match/weekly` | POST | Trigger weekly matching |
 | `/api/match/disco` | POST | Process a Fireflies transcript |
@@ -188,4 +208,5 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 - **API Key**: The `API_KEY` value from your environment variables
 - **Slack Channel**: Matches are posted to the configured `SLACK_CHANNEL_MATCHES`
 - **Slack Review Tag** (optional): Set `SLACK_REVIEW_TAG` to a Slack user or group mention (e.g. `<@U12345>`) to tag a reviewer on every match output. If not set, a generic "Tag your Strategist" reminder appears.
+- **RSS Feed URL** (optional): Override with `RSS_FEED_URL` env var. Default: The Business Village LinkedIn newsletter RSS.
 - **Google Sheet**: Opportunity review sheet (linked in the Monday Slack reminder)

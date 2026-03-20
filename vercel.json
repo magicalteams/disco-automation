@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/newsletter-ingest",
+      "schedule": "0 11 * * 1"
+    },
+    {
       "path": "/api/cron/sheet-reminder",
       "schedule": "0 14 * * 1"
     },
