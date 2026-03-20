@@ -248,9 +248,11 @@ export async function processAndMatchTranscript(
               // Resolve partner name to ID
               const normalize = (s: string) =>
                 s.trim().replace(/\s+/g, " ").toLowerCase();
-              const partner = partners.find(
-                (p) => normalize(p.name) === normalize(m.partnerName)
-              );
+              const matchName = normalize(m.partnerName);
+              const partner = partners.find((p) => {
+                const dbName = normalize(p.name);
+                return dbName === matchName || matchName.startsWith(dbName);
+              });
               if (!partner) {
                 console.warn(
                   `Partner "${m.partnerName}" not found, skipping disco match`

@@ -3,6 +3,8 @@ import { runWeeklyMatching } from "@/lib/matching/engine";
 import { syncAndExpireOpportunities } from "@/lib/matching/pre-match-sync";
 import { getWeekIdentifier } from "@/lib/utils/date-classifier";
 
+export const maxDuration = 300;
+
 export async function GET(request: NextRequest) {
   // Verify cron secret (Vercel sends this header for cron jobs)
   const authHeader = request.headers.get("authorization");

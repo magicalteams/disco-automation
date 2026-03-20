@@ -2,7 +2,7 @@ import { NextRequest, after } from "next/server";
 import { verifySlackRequest } from "@/lib/slack/verify";
 import { dispatch } from "@/lib/slack/commands";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const { valid, body } = await verifySlackRequest(request);

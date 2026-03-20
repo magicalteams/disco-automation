@@ -162,9 +162,11 @@ export async function runWeeklyMatching(
 
         const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
         const matchName = normalize(match.partnerName);
-        const partner = partners.find(
-          (p) => normalize(p.name) === matchName
-        );
+        const partner = partners.find((p) => {
+          const dbName = normalize(p.name);
+          // Exact match, or Claude appended extra context (e.g. company name)
+          return dbName === matchName || matchName.startsWith(dbName);
+        });
         if (!partner) {
           console.warn(
             `Partner "${match.partnerName}" not found in database (normalized: "${matchName}"), skipping. ` +
