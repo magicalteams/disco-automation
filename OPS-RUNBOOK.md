@@ -156,6 +156,7 @@ After processing, the full match output (needs, offers, intros, draft emails) ap
 |-------|-------------|
 | `/match` | Run matching for the current week (live — writes to DB, posts to channel) |
 | `/match dry-run` | Preview matches without writing to DB or posting to channel |
+| `/match reset` | Delete this week's match run so you can re-run `/match` |
 
 Before matching, the system automatically syncs any status changes from the Google Sheet and auto-expires past-due opportunities.
 

@@ -11,6 +11,7 @@ import {
   formatDiscoMatchesToSlack,
   postSlackMessage,
 } from "@/lib/slack/formatter";
+import { prisma } from "@/lib/clients/db";
 
 interface CommandResult {
   /** Immediate acknowledgment shown to the user (ephemeral) */
@@ -179,7 +180,16 @@ async function discoProcessTranscript(
 // ---------------------------------------------------------------------------
 
 function handleMatch(text: string, responseUrl: string): CommandResult {
-  const isDryRun = text.toLowerCase().includes("dry-run") || text.toLowerCase().includes("dryrun");
+  const lower = text.toLowerCase();
+  const isDryRun = lower.includes("dry-run") || lower.includes("dryrun");
+  const isReset = lower === "reset";
+
+  if (isReset) {
+    return {
+      ack: ":hourglass_flowing_sand: Resetting this week's match run...",
+      process: () => runReset(responseUrl),
+    };
+  }
 
   if (isDryRun) {
     return {
@@ -234,6 +244,35 @@ async function runMatch(
     await respond(
       responseUrl,
       `:x: Matching failed: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function runReset(responseUrl: string): Promise<void> {
+  try {
+    const weekIdentifier = getWeekIdentifier(new Date());
+    const matchRun = await prisma.matchRun.findUnique({
+      where: { weekIdentifier },
+    });
+
+    if (!matchRun) {
+      await respond(responseUrl, `:information_source: No match run found for ${weekIdentifier} — nothing to reset.`);
+      return;
+    }
+
+    const deletedResults = await prisma.matchResult.deleteMany({
+      where: { matchRunId: matchRun.id },
+    });
+    await prisma.matchRun.delete({ where: { id: matchRun.id } });
+
+    await respond(
+      responseUrl,
+      `:white_check_mark: Reset match run for ${weekIdentifier} (was "${matchRun.status}", ${deletedResults.count} results deleted). You can now run \`/match\` again.`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Reset failed: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }
