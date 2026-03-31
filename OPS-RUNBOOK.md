@@ -170,7 +170,68 @@ Use this if the Monday 11 AM automated ingestion failed, or if you need to re-tr
 
 ---
 
-## API Endpoints Reference
+## 6. Slack App Setup (One-Time)
+
+These steps configure the slash commands in your Slack workspace. You only need to do this once (or when adding the app to a new workspace).
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and select your app (or create one)
+2. Under **Slash Commands**, add three commands — all pointing to the same URL:
+
+| Command | Request URL | Description |
+|---------|------------|-------------|
+| `/disco` | `https://[VERCEL_URL]/api/slack/commands` | Process a discovery call for matching |
+| `/match` | `https://[VERCEL_URL]/api/slack/commands` | Run weekly opportunity matching |
+| `/ingest` | `https://[VERCEL_URL]/api/slack/commands` | Ingest this week's newsletter from RSS |
+
+Replace `[VERCEL_URL]` with your Vercel deployment URL (e.g. `disco-automation.vercel.app`).
+
+3. Under **OAuth & Permissions**, ensure these scopes are added:
+   - `commands` — lets the app receive slash commands
+   - `chat:write` — lets the app post match results to the channel
+
+4. Under **Basic Information → App Credentials**, copy the **Signing Secret** and set it as `SLACK_SIGNING_SECRET` in Vercel (Settings → Environment Variables).
+
+5. Reinstall the app to the workspace if you changed scopes.
+
+---
+
+## 7. Troubleshooting
+
+### Slash commands return "dispatch_failed" or 401
+
+The `SLACK_SIGNING_SECRET` environment variable is missing or incorrect in Vercel. Go to your Vercel project → Settings → Environment Variables and confirm it matches the Signing Secret from your Slack app's Basic Information page. Redeploy after updating.
+
+### Prisma error: "prepared statement s0 already exists"
+
+Your `DATABASE_URL` is missing the `?pgbouncer=true` parameter. Supabase's pooled connection (port 6543) requires this. Update the env var in Vercel to include it:
+
+```
+postgresql://...@db.xxx.supabase.co:6543/postgres?pgbouncer=true
+```
+
+### `/match` says "Match run already completed"
+
+A match run already exists for this week. Reset it first:
+
+```
+/match reset
+```
+
+Then run `/match` again.
+
+### Matching times out (Vercel 60s limit)
+
+The Vercel Hobby plan has a hard 60-second function timeout. The system uses Claude Haiku (fastest model) to stay within this budget. If you're hitting timeouts consistently, check:
+- Whether the number of opportunities or partners has grown significantly
+- Vercel runtime logs for timing details
+
+### Newsletter ingestion says "already extracted"
+
+This is normal — the newsletter was already processed for this week. The system deduplicates by issue number. If you need to re-extract, delete the existing newsletter record from the database first.
+
+---
+
+## 8. API Endpoints Reference
 
 All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 
@@ -178,6 +239,8 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 |----------|--------|---------|
 | `/api/slack/commands` | POST | Slack slash commands (`/disco`, `/match`, `/ingest`) |
 | `/api/cron/newsletter-ingest` | GET | Auto-ingest newsletter from LinkedIn RSS (cron) |
+| `/api/cron/sheet-reminder` | GET | Post Google Sheet review reminder to Slack (cron) |
+| `/api/cron/weekly-match` | GET | Run weekly matching (cron) |
 | `/api/extract/newsletter` | POST | Extract opportunities from newsletter (manual fallback) |
 | `/api/ingest/dossiers` | POST | Import a partner dossier |
 | `/api/match/weekly` | POST | Trigger weekly matching |
@@ -186,12 +249,36 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 | `/api/match/review` | POST | Review match results |
 | `/api/meetings/recent` | GET | List recent Fireflies meetings |
 
-## Environment
+---
 
-- **App URL**: Your Vercel deployment URL
-- **API Key**: The `API_KEY` value from your environment variables
-- **Slack Channel**: Matches are posted to the configured `SLACK_CHANNEL_MATCHES`
-- **Slack Review Tag** (optional): Set `SLACK_REVIEW_TAG` to a Slack user or group mention (e.g. `<@U12345>`) to tag a reviewer on every match output. If not set, a generic "Tag your Strategist" reminder appears.
-- **Slack Signing Secret**: Set `SLACK_SIGNING_SECRET` for slash command verification (found in Slack app settings → Basic Information → App Credentials).
-- **RSS Feed URL** (optional): Override with `RSS_FEED_URL` env var. Default: The Business Village LinkedIn newsletter RSS.
+## 9. Environment
+
+### Key Variables
+
+- **`API_KEY`**: Bearer token for non-cron API endpoints
+- **`SLACK_BOT_TOKEN`**: Slack bot token for posting messages
+- **`SLACK_CHANNEL_MATCHES`**: Channel ID where match results are posted
+- **`SLACK_SIGNING_SECRET`**: Signing secret for slash command verification (Slack app → Basic Information → App Credentials)
+- **`SLACK_REVIEW_TAG`** (optional): Slack user or group mention (e.g. `<@U12345>`) to tag on every match output. If not set, a generic "Tag your Strategist" reminder appears.
+- **`DATABASE_URL`**: Supabase pooled connection string — must include `?pgbouncer=true` (port 6543)
+- **`CRON_SECRET`**: Shared secret for authenticating Vercel cron requests
+- **`RSS_FEED_URL`** (optional): Override the default newsletter RSS feed URL
+- **`ANTHROPIC_API_KEY`**: Claude API key for AI-powered extraction and matching
+
+### Cron Schedule
+
+All crons run on Mondays. Configured in `vercel.json`.
+
+| Cron | Schedule | Path |
+|------|----------|------|
+| Newsletter ingest | Monday 11:00 UTC | `/api/cron/newsletter-ingest` |
+| Sheet review reminder | Monday 14:00 UTC | `/api/cron/sheet-reminder` |
+| Weekly matching | Monday 17:00 UTC | `/api/cron/weekly-match` |
+
+### External Services
+
 - **Google Sheet**: Opportunity review sheet (linked in the Monday Slack reminder)
+- **Vercel**: Hosting — Hobby plan (60s function timeout)
+- **Supabase**: PostgreSQL database (pooled connection via PgBouncer)
+- **Fireflies.ai**: Meeting transcription for disco matching
+- **Anthropic Claude**: AI extraction and matching (Haiku model for speed)
