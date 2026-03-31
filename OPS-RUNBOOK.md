@@ -168,6 +168,17 @@ Before matching, the system automatically syncs any status changes from the Goog
 
 Use this if the Monday 11 AM automated ingestion failed, or if you need to re-trigger ingestion for any reason. If the newsletter was already ingested, it will tell you.
 
+### `/partner` — Manage Partner Channel Mappings
+
+| Usage | What it does |
+|-------|-------------|
+| `/partner list` | Show all partners and their mapped Slack channels |
+| `/partner set-channel [name] [#channel]` | Map a partner to their dedicated Slack channel |
+
+Weekly matches for each partner are posted to their mapped channel. Partners without a channel configured fall back to the default `SLACK_CHANNEL_MATCHES` channel.
+
+Example: `/partner set-channel Amanda Antonym #client-amanda`
+
 ---
 
 ## 6. Slack App Setup (One-Time)
@@ -175,13 +186,14 @@ Use this if the Monday 11 AM automated ingestion failed, or if you need to re-tr
 These steps configure the slash commands in your Slack workspace. You only need to do this once (or when adding the app to a new workspace).
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and select your app (or create one)
-2. Under **Slash Commands**, add three commands — all pointing to the same URL:
+2. Under **Slash Commands**, add four commands — all pointing to the same URL:
 
 | Command | Request URL | Description |
 |---------|------------|-------------|
 | `/disco` | `https://[VERCEL_URL]/api/slack/commands` | Process a discovery call for matching |
 | `/match` | `https://[VERCEL_URL]/api/slack/commands` | Run weekly opportunity matching |
 | `/ingest` | `https://[VERCEL_URL]/api/slack/commands` | Ingest this week's newsletter from RSS |
+| `/partner` | `https://[VERCEL_URL]/api/slack/commands` | Manage partner channel mappings |
 
 Replace `[VERCEL_URL]` with your Vercel deployment URL (e.g. `disco-automation.vercel.app`).
 
@@ -237,7 +249,7 @@ All non-cron endpoints require `Authorization: Bearer [API_KEY]` header.
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/api/slack/commands` | POST | Slack slash commands (`/disco`, `/match`, `/ingest`) |
+| `/api/slack/commands` | POST | Slack slash commands (`/disco`, `/match`, `/ingest`, `/partner`) |
 | `/api/cron/newsletter-ingest` | GET | Auto-ingest newsletter from LinkedIn RSS (cron) |
 | `/api/cron/sheet-reminder` | GET | Post Google Sheet review reminder to Slack (cron) |
 | `/api/cron/weekly-match` | GET | Run weekly matching (cron) |
