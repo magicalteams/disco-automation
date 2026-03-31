@@ -36,6 +36,8 @@ export function dispatch(
       return handleMatch(text, responseUrl);
     case "/ingest":
       return handleIngest(responseUrl);
+    case "/partner":
+      return handlePartner(text, responseUrl);
     default:
       return {
         ack: `Unknown command: ${command}`,
@@ -334,6 +336,151 @@ async function runIngest(responseUrl: string): Promise<void> {
     await respond(
       responseUrl,
       `:x: Newsletter ingestion failed: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// /partner
+// ---------------------------------------------------------------------------
+
+function handlePartner(text: string, responseUrl: string): CommandResult {
+  const lower = text.trim().toLowerCase();
+
+  if (!lower || lower === "list") {
+    return {
+      ack: ":mag: Fetching partner channel mappings...",
+      process: () => partnerList(responseUrl),
+    };
+  }
+
+  if (lower.startsWith("set-channel")) {
+    return {
+      ack: ":hourglass_flowing_sand: Updating partner channel...",
+      process: () => partnerSetChannel(text.trim(), responseUrl),
+    };
+  }
+
+  return {
+    ack: `Unknown subcommand. Usage:\n\`/partner list\` — Show all partners and their channels\n\`/partner set-channel [partner name] [#channel or channel ID]\` — Map a partner to a Slack channel`,
+    process: async () => {},
+  };
+}
+
+async function partnerList(responseUrl: string): Promise<void> {
+  try {
+    const partners = await prisma.partnerProfile.findMany({
+      select: { name: true, company: true, slackChannelId: true },
+      orderBy: { name: "asc" },
+    });
+
+    if (partners.length === 0) {
+      await respond(responseUrl, "No partner profiles found.");
+      return;
+    }
+
+    const lines = partners.map((p) => {
+      const channel = p.slackChannelId
+        ? `<#${p.slackChannelId}>`
+        : "_not set (falls back to default)_";
+      return `- *${p.name}* / ${p.company} → ${channel}`;
+    });
+
+    await respond(
+      responseUrl,
+      `*Partner Channel Mappings*\n\n${lines.join("\n")}`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to list partners: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function partnerSetChannel(
+  text: string,
+  responseUrl: string
+): Promise<void> {
+  try {
+    // Parse: "set-channel Partner Name #channel" or "set-channel Partner Name C07XXXXXX"
+    // Extract channel reference (last argument that looks like a channel)
+    const afterSubcommand = text.replace(/^set-channel\s+/i, "").trim();
+    if (!afterSubcommand) {
+      await respond(
+        responseUrl,
+        `:warning: Usage: \`/partner set-channel [partner name] [#channel or channel ID]\``
+      );
+      return;
+    }
+
+    // Channel ID or <#C...> is always the last token
+    const tokens = afterSubcommand.split(/\s+/);
+    const lastToken = tokens[tokens.length - 1];
+
+    // Extract channel ID from <#C07XXXXXX|channel-name> or plain C07XXXXXX
+    let channelId: string | null = null;
+    const slackChannelMatch = lastToken.match(/^<#(C[A-Z0-9]+)(?:\|[^>]*)?>$/);
+    if (slackChannelMatch) {
+      channelId = slackChannelMatch[1];
+    } else if (/^C[A-Z0-9]{8,}$/.test(lastToken)) {
+      channelId = lastToken;
+    }
+
+    if (!channelId) {
+      await respond(
+        responseUrl,
+        `:warning: Could not parse a Slack channel from "${lastToken}". Use a #channel mention or a channel ID like C07XXXXXX.`
+      );
+      return;
+    }
+
+    // Partner name is everything before the channel token
+    const partnerName = tokens.slice(0, -1).join(" ").trim();
+    if (!partnerName) {
+      await respond(
+        responseUrl,
+        `:warning: Please provide a partner name. Usage: \`/partner set-channel Amanda Antonym #client-amanda\``
+      );
+      return;
+    }
+
+    // Fuzzy match partner by name
+    const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+    const searchName = normalize(partnerName);
+
+    const partners = await prisma.partnerProfile.findMany({
+      select: { id: true, name: true, company: true },
+    });
+
+    const partner = partners.find((p) => {
+      const dbName = normalize(p.name);
+      return dbName === searchName || dbName.startsWith(searchName) || searchName.startsWith(dbName);
+    });
+
+    if (!partner) {
+      const available = partners.map((p) => p.name).join(", ");
+      await respond(
+        responseUrl,
+        `:warning: No partner found matching "${partnerName}". Available: ${available}`
+      );
+      return;
+    }
+
+    // Update the partner's channel
+    await prisma.partnerProfile.update({
+      where: { id: partner.id },
+      data: { slackChannelId: channelId },
+    });
+
+    await respond(
+      responseUrl,
+      `:white_check_mark: *${partner.name}* / ${partner.company} → <#${channelId}>. Weekly matches for this partner will now post to that channel.`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to set channel: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }

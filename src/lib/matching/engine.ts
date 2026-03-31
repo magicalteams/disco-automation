@@ -2,7 +2,11 @@ import { prisma } from "@/lib/clients/db";
 import { callClaude, getModelId } from "@/lib/clients/anthropic";
 import { buildFullMatchingPrompt } from "@/lib/prompts/match-opportunities";
 import { BatchMatchResponseSchema } from "@/schemas/match-result";
-import { formatMatchesToSlack, postSlackMessage } from "@/lib/slack/formatter";
+import {
+  formatMatchesToSlack,
+  formatPartnerMatchesToSlack,
+  postSlackMessage,
+} from "@/lib/slack/formatter";
 
 const DEFAULT_THRESHOLD = parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD || "0.6");
 
@@ -72,6 +76,7 @@ export async function runWeeklyMatching(
       name: true,
       company: true,
       matchingSummary: true,
+      slackChannelId: true,
     },
   });
 
@@ -238,12 +243,47 @@ export async function runWeeklyMatching(
 
     // 9. Post to Slack (skip in dry-run or skipSlack mode)
     if (!options.dryRun && !options.skipSlack) {
-      const slackBlocks = formatMatchesToSlack(
-        opportunities,
-        allMatches,
-        partners.map((p) => ({ name: p.name, company: p.company }))
+      // Group matches by partner's Slack channel
+      const partnerByName = new Map(
+        partners.map((p) => [p.name, p])
       );
-      await postSlackMessage(slackBlocks);
+
+      const matchesByChannel = new Map<string, typeof allMatches>();
+      const fallbackChannel = process.env.SLACK_CHANNEL_MATCHES || "";
+
+      for (const match of allMatches) {
+        const partner = partnerByName.get(match.partnerName);
+        const channel = partner?.slackChannelId || fallbackChannel;
+        const existing = matchesByChannel.get(channel) || [];
+        existing.push(match);
+        matchesByChannel.set(channel, existing);
+      }
+
+      // Post each channel's matches separately
+      for (const [channel, channelMatches] of matchesByChannel) {
+        // Collect unique partners in this channel group
+        const channelPartnerNames = new Set(channelMatches.map((m) => m.partnerName));
+        const channelPartners = partners.filter((p) => channelPartnerNames.has(p.name));
+
+        if (channelPartners.length === 1) {
+          // Single partner → use the focused per-partner format
+          const partner = channelPartners[0];
+          const blocks = formatPartnerMatchesToSlack(
+            opportunities,
+            channelMatches,
+            { name: partner.name, company: partner.company }
+          );
+          await postSlackMessage(blocks, channel);
+        } else {
+          // Multiple partners in fallback channel → use the grouped format
+          const blocks = formatMatchesToSlack(
+            opportunities,
+            channelMatches,
+            channelPartners.map((p) => ({ name: p.name, company: p.company }))
+          );
+          await postSlackMessage(blocks, channel);
+        }
+      }
     }
 
     const summary: MatchRunSummary = {

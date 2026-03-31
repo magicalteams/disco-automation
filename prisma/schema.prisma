@@ -31,6 +31,9 @@ model PartnerProfile {
   // Purpose-built ~500 token summary for batch matching prompts
   matchingSummary    String
 
+  // Slack routing
+  slackChannelId     String?  // Partner's dedicated Slack channel (e.g. "C07XXXXXX")
+
   // Ingestion metadata
   sourceType         String   // "drive_import" | "manual_paste"
   sourceReference    String?  // Drive file ID or "pasted_2026-03-01"

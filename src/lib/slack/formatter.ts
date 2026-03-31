@@ -211,6 +211,104 @@ export function formatMatchesToSlack(
   return blocks;
 }
 
+/**
+ * Format matches for a single partner (used when routing to partner-specific channels).
+ */
+export function formatPartnerMatchesToSlack(
+  opportunities: NewsletterOpportunity[],
+  matches: MatchData[],
+  partner: PartnerInfo,
+  weekLabel?: string
+): KnownBlock[] {
+  const blocks: KnownBlock[] = [];
+
+  // Header
+  const firstOpp = opportunities[0];
+  const issueLabel = weekLabel || firstOpp?.newsletterIssue || "This Week";
+  const dateLabel = firstOpp?.newsletterDate
+    ? new Date(firstOpp.newsletterDate).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "";
+
+  blocks.push({
+    type: "header",
+    text: {
+      type: "plain_text",
+      text: `Opportunity Matches — ${issueLabel}${dateLabel ? ` (${dateLabel})` : ""}`,
+    },
+  });
+
+  blocks.push({ type: "divider" });
+
+  // Build opportunity lookup
+  const oppLookup = new Map<string, NewsletterOpportunity>();
+  for (const opp of opportunities) {
+    oppLookup.set(opp.id, opp);
+  }
+
+  const partnerLabel = `${partner.name} / ${partner.company}`;
+
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: `*${partnerLabel}* — ${matches.length} matching ${matches.length === 1 ? "opportunity" : "opportunities"}`,
+    },
+  });
+
+  // Each matching opportunity (sorted by confidence)
+  for (const match of matches.sort((a, b) => b.confidenceScore - a.confidenceScore)) {
+    const opp = oppLookup.get(match.opportunityId);
+    const emoji = opp ? getEmoji(opp.category) : "\ud83d\udccc";
+    const oppTitle = opp?.title || match.opportunityTitle;
+    const dateInfo = opp?.dateDisplayText || "";
+    const category = opp?.category || "";
+
+    const dateWarning =
+      opp?.dateConfidence === "unknown"
+        ? "\n> :warning: No set deadline — open until filled"
+        : "";
+    const link = opp?.sourceUrl ? `\n> :link: ${opp.sourceUrl}` : "";
+
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: [
+          `> ${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+          category || dateInfo ? `> _${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
+          `> _Why:_ ${match.rationale}`,
+          `>`,
+          `> :speech_balloon: *Pod Language:* "${match.internalLanguage}"`,
+          `>`,
+          `> :speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
+          dateWarning || null,
+          link || null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
+    });
+
+    if (match.outreachDraftEmail) {
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `:email: *Draft Outreach Email:*\n\`\`\`${match.outreachDraftEmail}\`\`\``,
+        },
+      });
+    }
+  }
+
+  blocks.push(...buildReviewFooter());
+
+  return blocks;
+}
+
 export function formatSheetReminder(
   sheetUrl: string,
   weekIdentifier: string,
@@ -476,9 +574,13 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
   return blocks;
 }
 
-export async function postSlackMessage(blocks: KnownBlock[]): Promise<void> {
-  if (!CHANNEL) {
-    console.log("SLACK_CHANNEL_MATCHES not set, logging blocks instead:");
+export async function postSlackMessage(
+  blocks: KnownBlock[],
+  channel?: string
+): Promise<void> {
+  const target = channel || CHANNEL;
+  if (!target) {
+    console.log("No Slack channel specified, logging blocks instead:");
     console.log(JSON.stringify(blocks, null, 2));
     return;
   }
@@ -488,7 +590,7 @@ export async function postSlackMessage(blocks: KnownBlock[]): Promise<void> {
   for (let i = 0; i < blocks.length; i += BLOCK_LIMIT) {
     const chunk = blocks.slice(i, i + BLOCK_LIMIT);
     await slack.chat.postMessage({
-      channel: CHANNEL,
+      channel: target,
       blocks: chunk,
       text: "Weekly Opportunity Matches", // Fallback for notifications
     });
