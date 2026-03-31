@@ -50,6 +50,38 @@ export function dispatch(
 // /disco
 // ---------------------------------------------------------------------------
 
+/**
+ * Calendly event type names used for disco calls.
+ * Meeting titles from Calendly follow the pattern "[Guest]: [Event Type] from [Org]".
+ * We match on ": [event type]" to filter only disco-relevant meetings.
+ *
+ * Source Calendly links:
+ *   calendly.com/mercedes-ballard/disco
+ *   calendly.com/alex-magicalteams/meet
+ *   calendly.com/csalerno/explore
+ *   calendly.com/magicalteams/explore
+ *   calendly.com/magicalteams/partnerships
+ *   calendly.com/magicalteams/collaborations
+ *   calendly.com/magicalteams/jam-with-mt
+ *   calendly.com/cara-magicalteams/chat-with-cara
+ */
+const DISCO_EVENT_TYPES = [
+  "Disco",
+  "Meet",
+  "Explore",
+  "Partnerships",
+  "Collaborations",
+  "Jam with MT",
+  "Chat with Cara",
+];
+
+function isDiscoMeeting(title: string): boolean {
+  const lower = title.toLowerCase();
+  return DISCO_EVENT_TYPES.some((eventType) =>
+    lower.includes(`: ${eventType.toLowerCase()}`)
+  );
+}
+
 function handleDisco(text: string, responseUrl: string): CommandResult {
   if (!text) {
     return {
@@ -77,14 +109,15 @@ function handleDisco(text: string, responseUrl: string): CommandResult {
 
 async function discoListMeetings(responseUrl: string): Promise<void> {
   try {
-    const meetings = await listRecentMeetings({ limit: 10 });
+    const allMeetings = await listRecentMeetings({ limit: 50 });
+    const meetings = allMeetings.filter((m) => isDiscoMeeting(m.title));
 
     if (meetings.length === 0) {
-      await respond(responseUrl, "No recent meetings found in Fireflies.");
+      await respond(responseUrl, "No recent disco meetings found in Fireflies.");
       return;
     }
 
-    const lines = meetings.map((m, i) => {
+    const lines = meetings.slice(0, 10).map((m, i) => {
       const date = new Date(m.date).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -111,10 +144,11 @@ async function discoSearchMeetings(
   responseUrl: string
 ): Promise<void> {
   try {
-    const meetings = await listRecentMeetings({ limit: 20 });
+    const allMeetings = await listRecentMeetings({ limit: 50 });
+    const discoMeetings = allMeetings.filter((m) => isDiscoMeeting(m.title));
     const q = query.toLowerCase();
 
-    const matches = meetings.filter(
+    const matches = discoMeetings.filter(
       (m) =>
         m.title.toLowerCase().includes(q) ||
         m.participants.some((p) => p.toLowerCase().includes(q))
@@ -123,7 +157,7 @@ async function discoSearchMeetings(
     if (matches.length === 0) {
       await respond(
         responseUrl,
-        `:mag: No meetings found matching "${query}". Try \`/disco\` to see all recent meetings.`
+        `:mag: No disco meetings found matching "${query}". Try \`/disco\` to see all recent disco meetings.`
       );
       return;
     }
