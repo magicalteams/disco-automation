@@ -6,6 +6,7 @@ import {
   formatMatchesToSlack,
   formatPartnerMatchesToSlack,
   postSlackMessage,
+  postMatchThreadReplies,
 } from "@/lib/slack/formatter";
 
 const DEFAULT_THRESHOLD = parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD || "0.6");
@@ -273,7 +274,12 @@ export async function runWeeklyMatching(
             channelMatches,
             { name: partner.name, company: partner.company }
           );
-          await postSlackMessage(blocks, channel);
+          const parentTs = await postSlackMessage(blocks, channel);
+
+          // Post individual matches as thread replies for per-match tracking
+          if (parentTs && channelMatches.length > 0) {
+            await postMatchThreadReplies(parentTs, channel, channelMatches, opportunities);
+          }
         } else {
           // Multiple partners in fallback channel → use the grouped format
           const blocks = formatMatchesToSlack(
@@ -281,7 +287,12 @@ export async function runWeeklyMatching(
             channelMatches,
             channelPartners.map((p) => ({ name: p.name, company: p.company }))
           );
-          await postSlackMessage(blocks, channel);
+          const parentTs = await postSlackMessage(blocks, channel);
+
+          // Post individual matches as thread replies for per-match tracking
+          if (parentTs && channelMatches.length > 0) {
+            await postMatchThreadReplies(parentTs, channel, channelMatches, opportunities);
+          }
         }
       }
     }

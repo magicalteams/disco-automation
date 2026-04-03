@@ -577,22 +577,99 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
 export async function postSlackMessage(
   blocks: KnownBlock[],
   channel?: string
-): Promise<void> {
+): Promise<string | undefined> {
   const target = channel || CHANNEL;
   if (!target) {
     console.log("No Slack channel specified, logging blocks instead:");
     console.log(JSON.stringify(blocks, null, 2));
-    return;
+    return undefined;
   }
 
   // Slack has a 50-block limit per message. Split if needed.
   const BLOCK_LIMIT = 50;
+  let firstTs: string | undefined;
   for (let i = 0; i < blocks.length; i += BLOCK_LIMIT) {
     const chunk = blocks.slice(i, i + BLOCK_LIMIT);
-    await slack.chat.postMessage({
+    const result = await slack.chat.postMessage({
       channel: target,
       blocks: chunk,
       text: "Weekly Opportunity Matches", // Fallback for notifications
+    });
+    if (!firstTs) firstTs = result.ts;
+  }
+  return firstTs;
+}
+
+/**
+ * Format a single match as blocks for a thread reply.
+ */
+export function formatSingleMatchBlocks(
+  match: MatchData,
+  opportunity: NewsletterOpportunity | undefined
+): KnownBlock[] {
+  const emoji = opportunity ? getEmoji(opportunity.category) : "\ud83d\udccc";
+  const oppTitle = opportunity?.title || match.opportunityTitle;
+  const dateInfo = opportunity?.dateDisplayText || "";
+  const category = opportunity?.category || "";
+
+  const blocks: KnownBlock[] = [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: [
+          `${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+          category || dateInfo ? `_${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
+          `_Why:_ ${match.rationale}`,
+          "",
+          `:speech_balloon: *Pod Language:* "${match.internalLanguage}"`,
+          "",
+          `:speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
+        ]
+          .filter((l) => l !== null)
+          .join("\n"),
+      },
+    },
+  ];
+
+  if (match.outreachDraftEmail) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `:email: *Draft Outreach Email:*\n\`\`\`${match.outreachDraftEmail}\`\`\``,
+      },
+    });
+  }
+
+  return blocks;
+}
+
+/**
+ * Post individual match messages as thread replies under a parent message.
+ */
+export async function postMatchThreadReplies(
+  parentTs: string,
+  channel: string,
+  matches: MatchData[],
+  opportunities: NewsletterOpportunity[]
+): Promise<void> {
+  const oppLookup = new Map<string, NewsletterOpportunity>();
+  for (const opp of opportunities) {
+    oppLookup.set(opp.id, opp);
+  }
+
+  const sorted = [...matches].sort((a, b) => b.confidenceScore - a.confidenceScore);
+
+  for (const match of sorted) {
+    const opp = oppLookup.get(match.opportunityId);
+    const blocks = formatSingleMatchBlocks(match, opp);
+
+    await slack.chat.postMessage({
+      channel,
+      thread_ts: parentTs,
+      blocks,
+      text: `Match: ${match.opportunityTitle} (${match.confidenceScore.toFixed(2)})`,
     });
   }
 }
