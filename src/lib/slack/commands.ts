@@ -524,7 +524,7 @@ function handlePartner(text: string, responseUrl: string, userId: string): Comma
 async function partnerList(responseUrl: string): Promise<void> {
   try {
     const partners = await prisma.partnerProfile.findMany({
-      select: { name: true, company: true, slackChannelId: true },
+      select: { name: true, company: true, slackChannelId: true, matchingNotes: true },
       orderBy: { name: "asc" },
     });
 
@@ -536,13 +536,14 @@ async function partnerList(responseUrl: string): Promise<void> {
     const lines = partners.map((p) => {
       const channel = p.slackChannelId
         ? `<#${p.slackChannelId}>`
-        : "_not set (falls back to default)_";
-      return `- *${p.name}* / ${p.company} → ${channel}`;
+        : "_no channel set_";
+      const notes = p.matchingNotes ? `\n    _Notes: ${p.matchingNotes}_` : "";
+      return `*${p.name}* / ${p.company} → ${channel}${notes}\n    \`/partner note ${p.name} [notes]\`  ·  \`/partner set-channel ${p.name} #channel\``;
     });
 
     await respond(
       responseUrl,
-      `*Partner Channel Mappings*\n\n${lines.join("\n")}`
+      `*Partner Directory*\nCopy a command below to update a partner.\n\n${lines.join("\n\n")}`
     );
   } catch (error) {
     await respond(
