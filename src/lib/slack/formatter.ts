@@ -211,15 +211,16 @@ export function formatMatchesToSlack(
 /**
  * Format matches for a single partner (used when routing to partner-specific channels).
  */
+/**
+ * Format a brief summary for the parent message in a partner's channel.
+ * Full match details go in the thread replies — this just signals what arrived.
+ */
 export function formatPartnerMatchesToSlack(
   opportunities: NewsletterOpportunity[],
   matches: MatchData[],
   partner: PartnerInfo,
   weekLabel?: string
 ): KnownBlock[] {
-  const blocks: KnownBlock[] = [];
-
-  // Header
   const firstOpp = opportunities[0];
   const issueLabel = weekLabel || firstOpp?.newsletterIssue || "This Week";
   const dateLabel = firstOpp?.newsletterDate
@@ -230,78 +231,27 @@ export function formatPartnerMatchesToSlack(
       })
     : "";
 
-  blocks.push({
-    type: "header",
-    text: {
-      type: "plain_text",
-      text: `Opportunity Matches — ${issueLabel}${dateLabel ? ` (${dateLabel})` : ""}`,
+  const strong = matches.filter((m) => m.confidenceScore >= 0.7).length;
+  const strongNote = strong > 0 ? ` (${strong} strong)` : "";
+
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `Opportunity Matches — ${issueLabel}${dateLabel ? ` (${dateLabel})` : ""}`,
+      },
     },
-  });
-
-  blocks.push({ type: "divider" });
-
-  // Build opportunity lookup
-  const oppLookup = new Map<string, NewsletterOpportunity>();
-  for (const opp of opportunities) {
-    oppLookup.set(opp.id, opp);
-  }
-
-  const partnerLabel = `${partner.name} / ${partner.company}`;
-
-  blocks.push({
-    type: "section",
-    text: {
-      type: "mrkdwn",
-      text: `*${partnerLabel}* — ${matches.length} matching ${matches.length === 1 ? "opportunity" : "opportunities"}`,
-    },
-  });
-
-  // Each matching opportunity (sorted by confidence)
-  for (const match of matches.sort((a, b) => b.confidenceScore - a.confidenceScore)) {
-    const opp = oppLookup.get(match.opportunityId);
-    const emoji = opp ? getEmoji(opp.category) : "\ud83d\udccc";
-    const oppTitle = opp?.title || match.opportunityTitle;
-    const dateInfo = opp?.dateDisplayText || "";
-    const category = opp?.category || "";
-
-    const dateWarning =
-      opp?.dateConfidence === "unknown"
-        ? "\n> :warning: No set deadline — open until filled"
-        : "";
-    const link = opp?.sourceUrl ? `\n> :link: ${opp.sourceUrl}` : "";
-
-    blocks.push({
+    { type: "divider" },
+    {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: [
-          `> ${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
-          category || dateInfo ? `> _${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
-          `> _Why:_ ${match.rationale}`,
-          `>`,
-          `> :speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
-          dateWarning || null,
-          link || null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
+        text: `*${partner.name} / ${partner.company}* has *${matches.length}* matching ${matches.length === 1 ? "opportunity" : "opportunities"}${strongNote} this week.\n\nOpen the thread below to review each match and react to track what you've acted on.`,
       },
-    });
-
-    if (match.outreachDraftEmail) {
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `:email: *Draft Outreach Email:*\n\`\`\`${match.outreachDraftEmail}\`\`\``,
-        },
-      });
-    }
-  }
-
-  blocks.push(...buildReviewFooter());
-
-  return blocks;
+    },
+    ...buildReviewFooter(),
+  ];
 }
 
 export function formatSheetReminder(
