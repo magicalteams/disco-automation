@@ -100,6 +100,7 @@ export async function extractNewsletter(
         status: dateInfo.status,
         sourceUrl: extracted.sourceUrl,
         contactMethod: extracted.contactMethod,
+        audienceRestrictions: extracted.audienceRestrictions ?? "none",
       },
     });
     opportunities.push(opp);

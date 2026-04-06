@@ -87,13 +87,30 @@ export async function runWeeklyMatching(
     throw new Error(`No active opportunities found for ${weekIdentifier}`);
   }
 
-  // 3. Fetch all partner profiles
+  // 3. Filter out globally excluded opportunities
+  const exclusions = await prisma.globalExclusion.findMany();
+  const filteredOpportunities = opportunities.filter((opp) => {
+    const titleLower = opp.title.toLowerCase();
+    const excluded = exclusions.find((ex) => titleLower.includes(ex.pattern.toLowerCase()));
+    if (excluded) {
+      console.log(`Excluding "${opp.title}" (matches exclusion: "${excluded.pattern}")`);
+    }
+    return !excluded;
+  });
+
+  if (filteredOpportunities.length === 0) {
+    throw new Error(`All opportunities for ${weekIdentifier} were excluded or inactive`);
+  }
+
+  // 4. Fetch all partner profiles
   const partners = await prisma.partnerProfile.findMany({
     select: {
       id: true,
       name: true,
       company: true,
       matchingSummary: true,
+      geographicFocus: true,
+      matchingNotes: true,
       slackChannelId: true,
     },
     orderBy: { name: "asc" }, // Deterministic order for batching
@@ -136,13 +153,13 @@ export async function runWeeklyMatching(
     // 5. Process batch 0
     const batch0Partners = partners.slice(0, BATCH_SIZE);
     console.log(
-      `Batch 0/${totalBatches - 1}: matching ${opportunities.length} opportunities against ${batch0Partners.length} partners...`
+      `Batch 0/${totalBatches - 1}: matching ${filteredOpportunities.length} opportunities against ${batch0Partners.length} partners (${opportunities.length - filteredOpportunities.length} excluded)...`
     );
 
     const batch0Matches = await matchPartnersAgainstOpportunities(
-      opportunities,
+      filteredOpportunities,
       batch0Partners,
-      partners, // full list for name resolution
+      partners,
       threshold
     );
 
@@ -180,7 +197,7 @@ export async function runWeeklyMatching(
 
     // 9. Post to Slack if single batch
     if (!options.dryRun && !options.skipSlack) {
-      await postMatchesToSlack(batch0Matches, opportunities, partners);
+      await postMatchesToSlack(batch0Matches, filteredOpportunities, partners);
     }
 
     const summary: MatchRunSummary = {
@@ -235,12 +252,21 @@ export async function processMatchBatch(
     where: { weekIdentifier, status: "active" },
   });
 
+  // Apply global exclusions
+  const exclusions = await prisma.globalExclusion.findMany();
+  const filteredOpportunities = opportunities.filter((opp) => {
+    const titleLower = opp.title.toLowerCase();
+    return !exclusions.some((ex) => titleLower.includes(ex.pattern.toLowerCase()));
+  });
+
   const allPartners = await prisma.partnerProfile.findMany({
     select: {
       id: true,
       name: true,
       company: true,
       matchingSummary: true,
+      geographicFocus: true,
+      matchingNotes: true,
       slackChannelId: true,
     },
     orderBy: { name: "asc" },
@@ -253,19 +279,18 @@ export async function processMatchBatch(
   );
 
   if (batchPartners.length === 0) {
-    // No more partners — shouldn't happen but handle gracefully
     await finalizeBatchRun(matchRunId);
     await triggerNextBatch(matchRunId, weekIdentifier, -1, "post");
     return { matchesInBatch: 0, hasMore: false };
   }
 
   console.log(
-    `Batch ${batchIndex}/${totalBatches - 1}: matching ${opportunities.length} opportunities against ${batchPartners.length} partners...`
+    `Batch ${batchIndex}/${totalBatches - 1}: matching ${filteredOpportunities.length} opportunities against ${batchPartners.length} partners...`
   );
 
   try {
     const matches = await matchPartnersAgainstOpportunities(
-      opportunities,
+      filteredOpportunities,
       batchPartners,
       allPartners,
       threshold
@@ -366,12 +391,15 @@ async function matchPartnersAgainstOpportunities(
     dateDisplayText: string;
     contactMethod: string;
     sourceUrl: string | null;
+    audienceRestrictions: string;
   }>,
   batchPartners: Array<{
     id: string;
     name: string;
     company: string;
     matchingSummary: string;
+    geographicFocus: string[];
+    matchingNotes: string | null;
   }>,
   allPartners: Array<{
     id: string;
@@ -391,11 +419,14 @@ async function matchPartnersAgainstOpportunities(
       dateDisplayText: opp.dateDisplayText,
       contactMethod: opp.contactMethod,
       sourceUrl: opp.sourceUrl,
+      audienceRestrictions: opp.audienceRestrictions,
     })),
     batchPartners.map((p) => ({
       name: p.name,
       company: p.company,
       matchingSummary: p.matchingSummary,
+      geographicFocus: p.geographicFocus,
+      matchingNotes: p.matchingNotes,
     })),
     threshold
   );
@@ -424,7 +455,7 @@ async function matchPartnersAgainstOpportunities(
   );
 
   const matches: ResolvedMatch[] = [];
-  const incompleteMatches: Array<{ match: LenientMatchOutput; opp: typeof opportunities[0]; partner: typeof allPartners[0] }> = [];
+  const incompleteMatches: Array<{ match: LenientMatchOutput; opp: typeof opportunities[0]; partner: typeof batchPartners[0] }> = [];
 
   for (const match of lenientParsed.data.matches) {
     if (match.confidenceScore < threshold) continue;
@@ -467,7 +498,10 @@ async function matchPartnersAgainstOpportunities(
       console.warn(
         `Incomplete match: ${match.partnerName} → ${match.opportunityTitle} (missing: ${!match.rationale ? "rationale " : ""}${!match.clientFacingLanguage ? "clientFacingLanguage" : ""}). Queuing for retry.`
       );
-      incompleteMatches.push({ match, opp, partner });
+      const batchPartner = batchPartners.find((p) => p.id === partner.id);
+      if (batchPartner) {
+        incompleteMatches.push({ match, opp, partner: batchPartner });
+      }
     }
   }
 
@@ -477,7 +511,7 @@ async function matchPartnersAgainstOpportunities(
 
     for (const { match, opp, partner } of incompleteMatches) {
       try {
-        const retryResult = await retrySingleMatch(opp, partner, batchPartners, threshold);
+        const retryResult = await retrySingleMatch(opp, partner, threshold);
         if (retryResult) {
           matches.push(retryResult);
           console.log(`Retry succeeded: ${partner.name} → ${opp.title}`);
@@ -498,14 +532,13 @@ async function matchPartnersAgainstOpportunities(
  * Sends just one opportunity + one partner to Claude — tiny prompt, reliable output.
  */
 async function retrySingleMatch(
-  opp: { id: string; title: string; category: string; description: string; industries: string[]; relevantFor: string; dateDisplayText: string; contactMethod: string; sourceUrl: string | null },
-  partner: { id: string; name: string; company: string; matchingSummary: string },
-  batchPartners: Array<{ id: string; name: string; company: string; matchingSummary: string }>,
+  opp: { id: string; title: string; category: string; description: string; industries: string[]; relevantFor: string; dateDisplayText: string; contactMethod: string; sourceUrl: string | null; audienceRestrictions: string },
+  partner: { id: string; name: string; company: string; matchingSummary: string; geographicFocus: string[]; matchingNotes: string | null },
   threshold: number
 ): Promise<ResolvedMatch | null> {
   const { system, user } = buildFullMatchingPrompt(
-    [{ title: opp.title, category: opp.category, description: opp.description, industries: opp.industries, relevantFor: opp.relevantFor, dateDisplayText: opp.dateDisplayText, contactMethod: opp.contactMethod, sourceUrl: opp.sourceUrl }],
-    [{ name: partner.name, company: partner.company, matchingSummary: partner.matchingSummary }],
+    [{ title: opp.title, category: opp.category, description: opp.description, industries: opp.industries, relevantFor: opp.relevantFor, dateDisplayText: opp.dateDisplayText, contactMethod: opp.contactMethod, sourceUrl: opp.sourceUrl, audienceRestrictions: opp.audienceRestrictions }],
+    [{ name: partner.name, company: partner.company, matchingSummary: partner.matchingSummary, geographicFocus: partner.geographicFocus, matchingNotes: partner.matchingNotes }],
     threshold
   );
 

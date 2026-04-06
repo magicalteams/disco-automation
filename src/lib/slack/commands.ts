@@ -37,7 +37,7 @@ export function dispatch(
     case "/ingest":
       return handleIngest(responseUrl);
     case "/partner":
-      return handlePartner(text, responseUrl);
+      return handlePartner(text, responseUrl, _userId);
     default:
       return {
         ack: `Unknown command: ${command}`,
@@ -378,7 +378,7 @@ async function runIngest(responseUrl: string): Promise<void> {
 // /partner
 // ---------------------------------------------------------------------------
 
-function handlePartner(text: string, responseUrl: string): CommandResult {
+function handlePartner(text: string, responseUrl: string, userId: string): CommandResult {
   const lower = text.trim().toLowerCase();
 
   if (!lower || lower === "list") {
@@ -395,8 +395,36 @@ function handlePartner(text: string, responseUrl: string): CommandResult {
     };
   }
 
+  if (lower.startsWith("note")) {
+    return {
+      ack: ":hourglass_flowing_sand: Updating matching notes...",
+      process: () => partnerNote(text.trim(), responseUrl),
+    };
+  }
+
+  if (lower.startsWith("exclude remove") || lower.startsWith("exclude delete")) {
+    return {
+      ack: ":hourglass_flowing_sand: Removing exclusion...",
+      process: () => partnerExcludeRemove(text.trim(), responseUrl),
+    };
+  }
+
+  if (lower.startsWith("exclude")) {
+    return {
+      ack: ":hourglass_flowing_sand: Adding global exclusion...",
+      process: () => partnerExcludeAdd(text.trim(), responseUrl, userId),
+    };
+  }
+
+  if (lower === "exclusions") {
+    return {
+      ack: ":mag: Fetching global exclusions...",
+      process: () => partnerListExclusions(responseUrl),
+    };
+  }
+
   return {
-    ack: `Unknown subcommand. Usage:\n\`/partner list\` — Show all partners and their channels\n\`/partner set-channel [partner name] [#channel or channel ID]\` — Map a partner to a Slack channel`,
+    ack: `Unknown subcommand. Usage:\n\`/partner list\` — Show partners and their channels\n\`/partner set-channel [name] [#channel]\` — Map a partner to a channel\n\`/partner note [name] [notes]\` — Set matching notes for a partner\n\`/partner exclude [title pattern]\` — Exclude opportunities by title\n\`/partner exclude remove [pattern]\` — Remove an exclusion\n\`/partner exclusions\` — List all global exclusions`,
     process: async () => {},
   };
 }
@@ -515,6 +543,171 @@ async function partnerSetChannel(
     await respond(
       responseUrl,
       `:x: Failed to set channel: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function partnerNote(
+  text: string,
+  responseUrl: string
+): Promise<void> {
+  try {
+    const afterSubcommand = text.replace(/^note\s+/i, "").trim();
+    if (!afterSubcommand) {
+      await respond(
+        responseUrl,
+        `:warning: Usage: \`/partner note [partner name] [matching notes]\`\nExample: \`/partner note Amanda Antonym Not interested in speaking opportunities. Focus on editorial.\``
+      );
+      return;
+    }
+
+    // Fuzzy match partner name against known partners
+    const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+    const partners = await prisma.partnerProfile.findMany({
+      select: { id: true, name: true, company: true },
+    });
+
+    // Find the longest partner name that matches the beginning of the input
+    let matchedPartner: typeof partners[0] | null = null;
+    let noteText = "";
+
+    const sorted = [...partners].sort((a, b) => b.name.length - a.name.length);
+    for (const p of sorted) {
+      if (normalize(afterSubcommand).startsWith(normalize(p.name))) {
+        matchedPartner = p;
+        noteText = afterSubcommand.slice(p.name.length).trim();
+        break;
+      }
+    }
+
+    if (!matchedPartner) {
+      const available = partners.map((p) => p.name).join(", ");
+      await respond(
+        responseUrl,
+        `:warning: Could not match a partner name. Available: ${available}`
+      );
+      return;
+    }
+
+    if (!noteText) {
+      // Show current notes
+      const current = await prisma.partnerProfile.findUnique({
+        where: { id: matchedPartner.id },
+        select: { matchingNotes: true },
+      });
+      await respond(
+        responseUrl,
+        current?.matchingNotes
+          ? `*${matchedPartner.name}* current matching notes:\n> ${current.matchingNotes}\n\nTo update, include the new notes after the name.`
+          : `*${matchedPartner.name}* has no matching notes set. Add notes after the name to set them.`
+      );
+      return;
+    }
+
+    await prisma.partnerProfile.update({
+      where: { id: matchedPartner.id },
+      data: { matchingNotes: noteText },
+    });
+
+    await respond(
+      responseUrl,
+      `:white_check_mark: Updated matching notes for *${matchedPartner.name}*:\n> ${noteText}\n\nThese notes will influence future matching results.`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to update notes: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function partnerExcludeAdd(
+  text: string,
+  responseUrl: string,
+  userId: string
+): Promise<void> {
+  try {
+    const pattern = text.replace(/^exclude\s+/i, "").trim();
+    if (!pattern) {
+      await respond(
+        responseUrl,
+        `:warning: Usage: \`/partner exclude [title pattern]\`\nExample: \`/partner exclude Magical Match\``
+      );
+      return;
+    }
+
+    await prisma.globalExclusion.upsert({
+      where: { pattern },
+      update: { createdBy: userId },
+      create: { pattern, createdBy: userId },
+    });
+
+    await respond(
+      responseUrl,
+      `:white_check_mark: Added global exclusion: *"${pattern}"*\n\nOpportunities with this in the title will be excluded from all future matching.`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to add exclusion: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function partnerExcludeRemove(
+  text: string,
+  responseUrl: string
+): Promise<void> {
+  try {
+    const pattern = text.replace(/^exclude\s+(remove|delete)\s+/i, "").trim();
+    if (!pattern) {
+      await respond(responseUrl, `:warning: Usage: \`/partner exclude remove [pattern]\``);
+      return;
+    }
+
+    const deleted = await prisma.globalExclusion.deleteMany({
+      where: { pattern: { equals: pattern, mode: "insensitive" } },
+    });
+
+    if (deleted.count === 0) {
+      await respond(responseUrl, `:information_source: No exclusion found matching "${pattern}".`);
+    } else {
+      await respond(responseUrl, `:white_check_mark: Removed exclusion: *"${pattern}"*`);
+    }
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to remove exclusion: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function partnerListExclusions(responseUrl: string): Promise<void> {
+  try {
+    const exclusions = await prisma.globalExclusion.findMany({
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (exclusions.length === 0) {
+      await respond(
+        responseUrl,
+        "No global exclusions set. Use `/partner exclude [pattern]` to add one."
+      );
+      return;
+    }
+
+    const lines = exclusions.map(
+      (ex) => `- *"${ex.pattern}"* (added by <@${ex.createdBy}>)`
+    );
+
+    await respond(
+      responseUrl,
+      `*Global Exclusions*\nOpportunities matching these patterns are excluded from matching.\n\n${lines.join("\n")}`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to list exclusions: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }

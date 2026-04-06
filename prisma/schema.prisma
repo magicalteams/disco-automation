@@ -34,6 +34,9 @@ model PartnerProfile {
   // Slack routing
   slackChannelId     String?  // Partner's dedicated Slack channel (e.g. "C07XXXXXX")
 
+  // Strategist feedback (set via /partner note, influences matching)
+  matchingNotes      String?
+
   // Ingestion metadata
   sourceType         String   // "drive_import" | "manual_paste"
   sourceReference    String?  // Drive file ID or "pasted_2026-03-01"
@@ -70,8 +73,9 @@ model NewsletterOpportunity {
   // Status (human-overridable via Google Sheet)
   status           String   @default("active") // "active" | "expired" | "needs_review"
 
-  sourceUrl        String?
-  contactMethod    String
+  sourceUrl             String?
+  contactMethod         String
+  audienceRestrictions  String   @default("none") // Gender, geographic, tool prerequisites
 
   matchResults     MatchResult[]
 
@@ -156,4 +160,12 @@ model DiscoMatchResult {
   createdAt            DateTime @default(now())
 
   @@index([processedMeetingId])
+}
+
+model GlobalExclusion {
+  id        String   @id @default(uuid())
+  pattern   String   @unique // Case-insensitive title substring match
+  reason    String?
+  createdBy String   // Slack user ID
+  createdAt DateTime @default(now())
 }

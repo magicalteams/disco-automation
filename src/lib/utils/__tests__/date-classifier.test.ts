@@ -36,6 +36,7 @@ describe("classifyAndSetExpiry", () => {
     dateDisplayText: "No date",
     sourceUrl: null,
     contactMethod: "email",
+    audienceRestrictions: "none",
     eventDate: null,
     deadline: null,
   };

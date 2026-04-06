@@ -26,6 +26,7 @@ Each object must have these fields:
 - "dateDisplayText": human-readable date string (e.g., "March 11, 2026, 6:00-8:00 PM PDT" or "Open until filled" or "April 29-30, 2026"). If no date, use "No deadline — open until filled" or similar.
 - "sourceUrl": the URL if one is provided in the text, null otherwise
 - "contactMethod": how to engage (e.g., "Register via URL", "DM on LinkedIn", "Comment on LinkedIn post", "Apply via URL")
+- "audienceRestrictions": a brief string describing any hard eligibility constraints. Examples: "women only", "LGBTQ+ founders only", "must attend in person in NYC", "requires active Planoly account", "female founders who have raised funding". If the opportunity is open to anyone with no restrictions, use "none". Capture: gender restrictions, geographic requirements (in-person attendance, city-specific), tool/platform prerequisites, identity-based criteria.
 
 IMPORTANT:
 - Extract ALL opportunities from the newsletter. Do not skip any.

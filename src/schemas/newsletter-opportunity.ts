@@ -16,6 +16,7 @@ export const ExtractedOpportunitySchema = z.object({
   dateDisplayText: z.string(),
   sourceUrl: z.string().nullable(),
   contactMethod: z.string(),
+  audienceRestrictions: z.string().default("none"),
 });
 
 export type ExtractedOpportunity = z.infer<typeof ExtractedOpportunitySchema>;
