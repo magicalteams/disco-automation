@@ -684,12 +684,25 @@ async function triggerNextBatch(
       headers["x-vercel-protection-bypass"] = bypassSecret;
     }
 
+    // Use a short timeout so we confirm the request was accepted but don't
+    // wait for the full response (which would block until the next batch finishes).
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
     const res = await fetch(`${appUrl}/api/match/continue`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: controller.signal,
+    }).catch((err: Error) => {
+      // AbortError is expected — it means the request was sent and we timed out
+      // waiting for the response, which is exactly what we want.
+      if (err.name === "AbortError") return null;
+      throw err;
     });
-    console.log(`Triggered next step — status ${res.status}`);
+
+    clearTimeout(timeout);
+    console.log(`Triggered next step — status ${res?.status ?? "sent (response pending)"}`);
   } catch (err) {
     console.error("Failed to trigger next batch:", err);
   }
