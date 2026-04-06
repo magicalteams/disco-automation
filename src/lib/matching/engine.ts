@@ -584,7 +584,6 @@ async function triggerNextBatch(
   const appUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : process.env.APP_URL || "http://localhost:3000";
-  const cronSecret = process.env.CRON_SECRET || "";
 
   const body = phase
     ? { matchRunId, weekIdentifier, phase }
@@ -596,15 +595,10 @@ async function triggerNextBatch(
       : `Triggering batch ${batchIndex} for ${weekIdentifier}`
   );
 
-  // Await the fetch to ensure the request is sent before the function exits.
-  // We don't need the response body — just need the request to reach the server.
   try {
     const res = await fetch(`${appUrl}/api/match/continue`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cronSecret}`,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     console.log(`Triggered next step — status ${res.status}`);

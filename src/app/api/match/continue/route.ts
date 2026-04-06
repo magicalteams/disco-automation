@@ -1,24 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processMatchBatch, postMatchResultsToSlack } from "@/lib/matching/engine";
+import { prisma } from "@/lib/clients/db";
 
 export const maxDuration = 60;
 
 /**
  * Internal endpoint for batch-chaining weekly matching.
  * Each invocation processes one batch of partners or posts results to Slack.
- * Protected by CRON_SECRET to prevent external access.
+ * Validated by confirming the matchRunId exists in the database.
  */
 export async function POST(request: NextRequest) {
-  const authHeader = request.headers.get("authorization");
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
     const body = await request.json();
     const { matchRunId, weekIdentifier, batchIndex, phase } = body;
+
+    if (!matchRunId || !weekIdentifier) {
+      return NextResponse.json({ error: "Missing matchRunId or weekIdentifier" }, { status: 400 });
+    }
+
+    // Validate this is a real match run
+    const matchRun = await prisma.matchRun.findUnique({ where: { id: matchRunId } });
+    if (!matchRun) {
+      return NextResponse.json({ error: "Invalid matchRunId" }, { status: 403 });
+    }
 
     if (phase === "post") {
       console.log(`Batch chain: posting results for ${weekIdentifier}`);
