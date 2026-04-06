@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     const errorMsg =
       error instanceof Error ? error.message : "Unknown error";
     await postSlackAlert(
-      `:x: *Newsletter auto-ingest failed* — ${errorMsg}. Submit manually via the extraction API.`
+      `:x: *Newsletter auto-ingest failed* — The LinkedIn newsletter feed was unavailable when the automation ran this morning. This happens occasionally and usually resolves on its own. Type \`/ingest\` to retry.`
     ).catch(() => {}); // Don't fail if Slack alert also fails
 
     return NextResponse.json(
