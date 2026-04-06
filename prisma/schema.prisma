@@ -95,6 +95,7 @@ model MatchResult {
   rationale            String
   internalLanguage     String
   clientFacingLanguage String
+  outreachDraftEmail   String?
 
   matchRunId           String
   matchRun             MatchRun @relation(fields: [matchRunId], references: [id])

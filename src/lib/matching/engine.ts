@@ -331,7 +331,7 @@ export async function postMatchResultsToSlack(
     rationale: r.rationale,
     internalLanguage: r.internalLanguage,
     clientFacingLanguage: r.clientFacingLanguage,
-    // outreachDraftEmail is not stored in DB — omitted for Slack thread replies
+    outreachDraftEmail: r.outreachDraftEmail ?? undefined,
   }));
 
   // Build partner info with channel mappings
@@ -482,6 +482,7 @@ async function saveBatchResults(
       rationale: m.rationale,
       internalLanguage: m.internalLanguage,
       clientFacingLanguage: m.clientFacingLanguage,
+      outreachDraftEmail: m.outreachDraftEmail ?? null,
       matchRunId,
     })),
   });
