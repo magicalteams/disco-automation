@@ -588,31 +588,51 @@ export function formatSingleMatchBlocks(
   return blocks;
 }
 
+export interface ThreadReplyResult {
+  opportunityId: string;
+  partnerName: string;
+  messageTs: string;
+  channel: string;
+}
+
 /**
  * Post individual match messages as thread replies under a parent message.
+ * Returns the Slack message timestamps for each reply (used to track reactions).
  */
 export async function postMatchThreadReplies(
   parentTs: string,
   channel: string,
   matches: MatchData[],
   opportunities: NewsletterOpportunity[]
-): Promise<void> {
+): Promise<ThreadReplyResult[]> {
   const oppLookup = new Map<string, NewsletterOpportunity>();
   for (const opp of opportunities) {
     oppLookup.set(opp.id, opp);
   }
 
   const sorted = [...matches].sort((a, b) => b.confidenceScore - a.confidenceScore);
+  const results: ThreadReplyResult[] = [];
 
   for (const match of sorted) {
     const opp = oppLookup.get(match.opportunityId);
     const blocks = formatSingleMatchBlocks(match, opp);
 
-    await slack.chat.postMessage({
+    const result = await slack.chat.postMessage({
       channel,
       thread_ts: parentTs,
       blocks,
       text: `Match: ${match.opportunityTitle} (${match.confidenceScore.toFixed(2)})`,
     });
+
+    if (result.ts) {
+      results.push({
+        opportunityId: match.opportunityId,
+        partnerName: match.partnerName,
+        messageTs: result.ts,
+        channel,
+      });
+    }
   }
+
+  return results;
 }

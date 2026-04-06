@@ -11,6 +11,7 @@ import {
   formatPartnerMatchesToSlack,
   postSlackMessage,
   postMatchThreadReplies,
+  type ThreadReplyResult,
 } from "@/lib/slack/formatter";
 
 const DEFAULT_THRESHOLD = parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD || "0.6");
@@ -650,6 +651,8 @@ async function postMatchesToSlack(
     matchesByChannel.set(channel, existing);
   }
 
+  const allThreadResults: ThreadReplyResult[] = [];
+
   for (const [channel, channelMatches] of matchesByChannel) {
     const channelPartnerNames = new Set(channelMatches.map((m) => m.partnerName));
     const channelPartners = partners.filter((p) => channelPartnerNames.has(p.name));
@@ -666,7 +669,8 @@ async function postMatchesToSlack(
       const parentTs = await postSlackMessage(blocks, channel);
 
       if (parentTs && channelMatches.length > 0) {
-        await postMatchThreadReplies(parentTs, channel, channelMatches, opps);
+        const threadResults = await postMatchThreadReplies(parentTs, channel, channelMatches, opps);
+        allThreadResults.push(...threadResults);
       }
     } else {
       const blocks = formatMatchesToSlack(
@@ -677,8 +681,26 @@ async function postMatchesToSlack(
       const parentTs = await postSlackMessage(blocks, channel);
 
       if (parentTs && channelMatches.length > 0) {
-        await postMatchThreadReplies(parentTs, channel, channelMatches, opps);
+        const threadResults = await postMatchThreadReplies(parentTs, channel, channelMatches, opps);
+        allThreadResults.push(...threadResults);
       }
+    }
+  }
+
+  // Save Slack message timestamps to MatchResults for reaction tracking
+  if (allThreadResults.length > 0) {
+    for (const tr of allThreadResults) {
+      await prisma.matchResult.updateMany({
+        where: {
+          opportunityId: tr.opportunityId,
+          partner: { name: tr.partnerName },
+          slackMessageTs: null, // Only update if not already set
+        },
+        data: {
+          slackMessageTs: tr.messageTs,
+          slackChannelId: tr.channel,
+        },
+      });
     }
   }
 }

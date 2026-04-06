@@ -100,12 +100,18 @@ model MatchResult {
   clientFacingLanguage String
   outreachDraftEmail   String?
 
+  // Slack tracking for reaction-based status updates
+  slackMessageTs       String?  // Slack message timestamp of the thread reply
+  slackChannelId       String?  // Channel where the thread reply was posted
+  reactionStatus       String   @default("pending") // "pending" | "reviewing" | "shared" | "skipped"
+
   matchRunId           String
   matchRun             MatchRun @relation(fields: [matchRunId], references: [id])
 
   createdAt            DateTime @default(now())
 
   @@unique([opportunityId, partnerId, matchRunId])
+  @@index([slackMessageTs, slackChannelId])
 }
 
 model MatchRun {
