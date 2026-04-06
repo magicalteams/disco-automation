@@ -60,8 +60,9 @@ export async function extractNewsletter(
   );
   const rawResponse = await callClaude(user, {
     system,
-    model: "sonnet",
+    model: "haiku",
     maxTokens: 8192,
+    retries: 0,
   });
 
   // Parse JSON response
