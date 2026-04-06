@@ -12,6 +12,9 @@ import {
   postSlackMessage,
 } from "@/lib/slack/formatter";
 import { prisma } from "@/lib/clients/db";
+import { listDossierFiles, downloadFile } from "@/lib/clients/google-drive";
+import { parseDocxToText } from "@/lib/utils/docx-parser";
+import { extractAndUpsertProfile } from "@/lib/ingest/extract-and-upsert";
 
 interface CommandResult {
   /** Immediate acknowledgment shown to the user (ephemeral) */
@@ -41,6 +44,7 @@ const HELP_TEXT = `*Disco Automation — Available Commands*
 
 :busts_in_silhouette: */partner*
 \`/partner list\` — Show all partners with copy-pasteable commands
+\`/partner sync [search term]\` — Re-extract a dossier from Google Drive
 \`/partner note [name] [notes]\` — Set matching notes for a partner
 \`/partner set-channel [name] [#channel]\` — Map a partner to a channel
 \`/partner exclude [pattern]\` — Exclude opportunities by title
@@ -508,6 +512,13 @@ function handlePartner(text: string, responseUrl: string, userId: string): Comma
     };
   }
 
+  if (lower.startsWith("sync")) {
+    return {
+      ack: ":hourglass_flowing_sand: Syncing dossier from Google Drive... This may take up to a minute.",
+      process: () => partnerSync(text.trim(), responseUrl),
+    };
+  }
+
   if (lower.startsWith("set-channel")) {
     return {
       ack: ":hourglass_flowing_sand: Updating partner channel...",
@@ -664,6 +675,66 @@ async function partnerSetChannel(
     await respond(
       responseUrl,
       `:x: Failed to set channel: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function partnerSync(
+  text: string,
+  responseUrl: string
+): Promise<void> {
+  try {
+    const searchTerm = text.replace(/^sync\s+/i, "").trim();
+    const folderId = process.env.GOOGLE_DRIVE_DOSSIER_FOLDER_ID;
+
+    if (!folderId) {
+      await respond(responseUrl, `:x: GOOGLE_DRIVE_DOSSIER_FOLDER_ID not configured.`);
+      return;
+    }
+
+    if (!searchTerm) {
+      await respond(
+        responseUrl,
+        `:warning: Usage: \`/partner sync [search term]\`\nSearches the Drive dossier folder for a file matching the term and re-extracts the profile.\nExample: \`/partner sync Amanda\` or \`/partner sync Fernlove\``
+      );
+      return;
+    }
+
+    // List all dossier files and find one matching the search term
+    const files = await listDossierFiles(folderId);
+    const searchLower = searchTerm.toLowerCase();
+    const match = files.find((f) => f.name.toLowerCase().includes(searchLower));
+
+    if (!match) {
+      const available = files.map((f) => f.name).slice(0, 10).join("\n");
+      await respond(
+        responseUrl,
+        `:warning: No dossier file found matching "${searchTerm}". Available files:\n\`\`\`${available}\`\`\``
+      );
+      return;
+    }
+
+    await respond(responseUrl, `:hourglass_flowing_sand: Found *${match.name}* — downloading and extracting...`);
+
+    // Download and parse
+    const buffer = await downloadFile(match.fileId, match.mimeType);
+    const rawText = await parseDocxToText(buffer);
+
+    // Extract and upsert profile
+    const result = await extractAndUpsertProfile(rawText, {
+      sourceType: "drive_import",
+      sourceReference: match.fileId,
+    });
+
+    const action = result.isNew ? "Created" : "Updated";
+    await respond(
+      responseUrl,
+      `:white_check_mark: ${action} profile for *${result.profile.name}* (${result.profile.company}) from *${match.name}*.\n\nThis partner's matching data has been refreshed and will be used in the next matching run.`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }
