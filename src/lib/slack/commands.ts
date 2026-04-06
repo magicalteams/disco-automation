@@ -273,7 +273,7 @@ async function runMatch(
     } else {
       await respond(
         responseUrl,
-        `:white_check_mark: Weekly matching complete for ${weekIdentifier}${syncNote} — ${result.matchesFound} matches for ${result.partnersMatched} partners. Results posted to the channel.`
+        `:hourglass_flowing_sand: Weekly matching started for ${weekIdentifier}${syncNote}. Processing partners in batches — results will be posted to each client's channel when all batches are complete.`
       );
     }
   } catch (error) {
