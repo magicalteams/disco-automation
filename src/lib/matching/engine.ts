@@ -675,9 +675,18 @@ async function triggerNextBatch(
   );
 
   try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+
+    // Vercel Deployment Protection blocks unauthenticated requests.
+    // The bypass secret allows internal automation calls through.
+    const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+    if (bypassSecret) {
+      headers["x-vercel-protection-bypass"] = bypassSecret;
+    }
+
     const res = await fetch(`${appUrl}/api/match/continue`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify(body),
     });
     console.log(`Triggered next step — status ${res.status}`);
