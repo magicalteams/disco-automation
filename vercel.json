@@ -7,10 +7,6 @@
     {
       "path": "/api/cron/sheet-reminder",
       "schedule": "0 14 * * 1"
-    },
-    {
-      "path": "/api/cron/weekly-match",
-      "schedule": "0 17 * * 1"
     }
   ]
 }

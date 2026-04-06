@@ -1,0 +1,56 @@
+name: Weekly Opportunity Matching
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run mode (no DB writes, no Slack posts)'
+        required: false
+        default: 'false'
+  schedule:
+    - cron: '0 17 * * 1'  # Monday 5 PM UTC
+
+jobs:
+  match:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run weekly matching
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_SHEET_OPPORTUNITIES_ID: ${{ secrets.GOOGLE_SHEET_OPPORTUNITIES_ID }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: npx tsx scripts/run-weekly-matching.ts
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
+        run: |
+          curl -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":x: *Weekly matching failed.* Check GitHub Actions logs for details.\"}"

@@ -2,8 +2,6 @@ import { listRecentMeetings } from "@/lib/clients/fireflies";
 import {
   processAndMatchTranscript,
 } from "@/lib/matching/disco-engine";
-import { runWeeklyMatching } from "@/lib/matching/engine";
-import { syncAndExpireOpportunities } from "@/lib/matching/pre-match-sync";
 import { getWeekIdentifier } from "@/lib/utils/date-classifier";
 import { fetchLatestNewsletter } from "@/lib/clients/linkedin-rss";
 import { extractNewsletter } from "@/lib/ingest/extract-newsletter";
@@ -266,57 +264,56 @@ function handleMatch(text: string, responseUrl: string): CommandResult {
 
   if (isDryRun) {
     return {
-      ack: ":hourglass_flowing_sand: Running matching in dry-run mode... Results will appear here when ready.",
-      process: () => runMatch(responseUrl, true),
+      ack: ":hourglass_flowing_sand: Triggering matching in dry-run mode...",
+      process: () => triggerMatchingWorkflow("true", responseUrl),
     };
   }
 
   return {
-    ack: ":hourglass_flowing_sand: Running weekly matching... Results will appear in the channel when ready.",
-    process: () => runMatch(responseUrl, false),
+    ack: ":hourglass_flowing_sand: Triggering weekly matching...",
+    process: () => triggerMatchingWorkflow("false", responseUrl),
   };
 }
 
-async function runMatch(
-  responseUrl: string,
-  dryRun: boolean
+async function triggerMatchingWorkflow(
+  dryRun: string,
+  responseUrl: string
 ): Promise<void> {
+  const githubPat = process.env.GITHUB_PAT;
+  if (!githubPat) {
+    await respond(responseUrl, `:x: GITHUB_PAT not configured. Cannot trigger matching.`);
+    return;
+  }
+
   try {
-    const weekIdentifier = getWeekIdentifier(new Date());
+    const res = await fetch(
+      "https://api.github.com/repos/magicalteams/disco-automation/actions/workflows/weekly-matching.yml/dispatches",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${githubPat}`,
+          Accept: "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ref: "main", inputs: { dry_run: dryRun } }),
+      }
+    );
 
-    // Sync sheet overrides and auto-expire before matching
-    const sync = await syncAndExpireOpportunities(weekIdentifier);
+    const mode = dryRun === "true" ? "dry-run" : "production";
 
-    const result = await runWeeklyMatching(weekIdentifier, {
-      dryRun,
-      skipSlack: dryRun, // Dry-run keeps results ephemeral
-    });
-
-    const syncInfo = [];
-    if (sync.overrideCount > 0) syncInfo.push(`${sync.overrideCount} sheet overrides applied`);
-    if (sync.expiredCount > 0) syncInfo.push(`${sync.expiredCount} auto-expired`);
-    const syncNote = syncInfo.length > 0 ? ` (${syncInfo.join(", ")})` : "";
-
-    if (dryRun) {
-      const matchLines = (result.matches || []).map(
-        (m) =>
-          `- *${m.partnerName}* / ${m.company} \u2192 ${m.opportunityTitle} (${m.confidenceScore.toFixed(2)})`
-      );
-
+    if (res.status === 204) {
       await respond(
         responseUrl,
-        `:clipboard: *Dry-run results for ${weekIdentifier}*${syncNote}\n${result.opportunitiesScanned} opportunities, ${result.matchesFound} matches, ${result.partnersMatched} partners\n\n${matchLines.length > 0 ? matchLines.join("\n") : "_No matches found._"}`
+        `:white_check_mark: *Weekly matching started* (${mode} mode, Sonnet model). This runs in the background and may take several minutes. Results will be posted to each client's channel when complete.`
       );
     } else {
-      await respond(
-        responseUrl,
-        `:hourglass_flowing_sand: Weekly matching started for ${weekIdentifier}${syncNote}. Processing partners in batches — results will be posted to each client's channel when all batches are complete.`
-      );
+      const body = await res.text();
+      await respond(responseUrl, `:x: Failed to trigger matching (status ${res.status}): ${body}`);
     }
   } catch (error) {
     await respond(
       responseUrl,
-      `:x: Matching failed: ${error instanceof Error ? error.message : "Unknown error"}`
+      `:x: Failed to trigger matching: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }
