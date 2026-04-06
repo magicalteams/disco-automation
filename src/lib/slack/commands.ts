@@ -23,12 +23,40 @@ interface CommandResult {
 /**
  * Dispatch a Slack slash command to the appropriate handler.
  */
+const HELP_TEXT = `*Disco Automation — Available Commands*
+
+:mag: */disco*
+\`/disco\` — List recent disco meetings from Fireflies
+\`/disco [name]\` — Search meetings by participant name
+\`/disco [transcript ID]\` — Process a transcript for matching
+
+:bar_chart: */match*
+\`/match\` — Run weekly matching (posts to client channels)
+\`/match dry-run\` — Preview matches without posting
+\`/match reset\` — Clear this week's run to re-match
+\`/match status\` — See all matches and their reaction status
+
+:newspaper: */ingest*
+\`/ingest\` — Re-trigger newsletter ingestion from RSS
+
+:busts_in_silhouette: */partner*
+\`/partner list\` — Show all partners with copy-pasteable commands
+\`/partner note [name] [notes]\` — Set matching notes for a partner
+\`/partner set-channel [name] [#channel]\` — Map a partner to a channel
+\`/partner exclude [pattern]\` — Exclude opportunities by title
+\`/partner exclude remove [pattern]\` — Remove an exclusion
+\`/partner exclusions\` — List all global exclusions`;
+
 export function dispatch(
   command: string | null,
   text: string,
   responseUrl: string,
   _userId: string
 ): CommandResult {
+  if (text.trim().toLowerCase() === "help") {
+    return { ack: HELP_TEXT, process: async () => {} };
+  }
+
   switch (command) {
     case "/disco":
       return handleDisco(text, responseUrl);
@@ -40,7 +68,7 @@ export function dispatch(
       return handlePartner(text, responseUrl, _userId);
     default:
       return {
-        ack: `Unknown command: ${command}`,
+        ack: HELP_TEXT,
         process: async () => {},
       };
   }
