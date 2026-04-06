@@ -1,0 +1,60 @@
+name: Import Dossiers from Google Drive
+
+on:
+  workflow_dispatch:
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run dossier import
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_DRIVE_DOSSIER_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_DOSSIER_FOLDER_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
+          IMPORT_DELAY_MS: "5000"
+        run: npm run import:dossiers
+
+      - name: Notify Slack on success
+        if: success()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
+        run: |
+          curl -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":white_check_mark: *Bulk dossier import complete.* Check the logs for details. All partner profiles have been refreshed and will be used in the next matching run.\"}"
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
+        run: |
+          curl -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":x: *Bulk dossier import failed.* Check the GitHub Actions logs for details.\"}"

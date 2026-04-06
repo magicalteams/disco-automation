@@ -44,7 +44,8 @@ const HELP_TEXT = `*Disco Automation — Available Commands*
 
 :busts_in_silhouette: */partner*
 \`/partner list\` — Show all partners with copy-pasteable commands
-\`/partner sync [search term]\` — Re-extract a dossier from Google Drive
+\`/partner sync [search term]\` — Re-extract a single dossier from Google Drive
+\`/partner sync all\` — Re-extract all dossiers (runs in background)
 \`/partner note [name] [notes]\` — Set matching notes for a partner
 \`/partner set-channel [name] [#channel]\` — Map a partner to a channel
 \`/partner exclude [pattern]\` — Exclude opportunities by title
@@ -685,6 +686,13 @@ async function partnerSync(
 ): Promise<void> {
   try {
     const searchTerm = text.replace(/^sync\s+/i, "").trim();
+
+    // Handle "sync all" — trigger GitHub Action for bulk import
+    if (searchTerm.toLowerCase() === "all") {
+      await triggerBulkImport(responseUrl);
+      return;
+    }
+
     const folderId = process.env.GOOGLE_DRIVE_DOSSIER_FOLDER_ID;
 
     if (!folderId) {
@@ -695,7 +703,7 @@ async function partnerSync(
     if (!searchTerm) {
       await respond(
         responseUrl,
-        `:warning: Usage: \`/partner sync [search term]\`\nSearches the Drive dossier folder for a file matching the term and re-extracts the profile.\nExample: \`/partner sync Amanda\` or \`/partner sync Fernlove\``
+        `:warning: Usage:\n\`/partner sync [search term]\` — Re-extract a single dossier\n\`/partner sync all\` — Re-extract all dossiers (runs in background)\nExample: \`/partner sync Amanda\` or \`/partner sync Fernlove\``
       );
       return;
     }
@@ -809,6 +817,47 @@ async function partnerNote(
     await respond(
       responseUrl,
       `:x: Failed to update notes: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function triggerBulkImport(responseUrl: string): Promise<void> {
+  const githubPat = process.env.GITHUB_PAT;
+  if (!githubPat) {
+    await respond(responseUrl, `:x: GITHUB_PAT not configured. Cannot trigger bulk import.`);
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      "https://api.github.com/repos/magicalteams/disco-automation/actions/workflows/import-dossiers.yml/dispatches",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${githubPat}`,
+          Accept: "application/vnd.github.v3+json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ref: "main" }),
+      }
+    );
+
+    if (res.status === 204) {
+      await respond(
+        responseUrl,
+        `:white_check_mark: *Bulk dossier import started.* Processing all files in the Drive folder — this runs in the background and may take several minutes. A summary will be posted to the channel when complete.`
+      );
+    } else {
+      const body = await res.text();
+      await respond(
+        responseUrl,
+        `:x: Failed to trigger bulk import (status ${res.status}): ${body}`
+      );
+    }
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to trigger bulk import: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }
