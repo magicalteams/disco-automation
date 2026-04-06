@@ -10,7 +10,7 @@ import {
 } from "@/lib/slack/formatter";
 
 const DEFAULT_THRESHOLD = parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD || "0.6");
-const BATCH_SIZE = 8; // Partners per Claude call — keeps each call under ~30s
+const BATCH_SIZE = 4; // Partners per Claude call — keeps each call under ~30s with 15+ opportunities
 
 export interface MatchRunOptions {
   /** Override the confidence threshold (default: env var or 0.6) */
