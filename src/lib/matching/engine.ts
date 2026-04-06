@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/clients/db";
 import { callClaude, getModelId } from "@/lib/clients/anthropic";
 import { buildFullMatchingPrompt } from "@/lib/prompts/match-opportunities";
-import { BatchMatchResponseSchema } from "@/schemas/match-result";
+import {
+  BatchMatchResponseSchema,
+  LenientBatchMatchResponseSchema,
+  type LenientMatchOutput,
+} from "@/schemas/match-result";
 import {
   formatMatchesToSlack,
   formatPartnerMatchesToSlack,
@@ -408,9 +412,10 @@ async function matchPartnersAgainstOpportunities(
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   }
 
-  const parsed = BatchMatchResponseSchema.safeParse(JSON.parse(jsonStr));
-  if (!parsed.success) {
-    throw new Error(`Failed to parse match response: ${parsed.error.message}`);
+  // Parse leniently first — allows missing text fields so we can retry just those
+  const lenientParsed = LenientBatchMatchResponseSchema.safeParse(JSON.parse(jsonStr));
+  if (!lenientParsed.success) {
+    throw new Error(`Failed to parse match response: ${lenientParsed.error.message}`);
   }
 
   const normalize = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
@@ -419,8 +424,9 @@ async function matchPartnersAgainstOpportunities(
   );
 
   const matches: ResolvedMatch[] = [];
+  const incompleteMatches: Array<{ match: LenientMatchOutput; opp: typeof opportunities[0]; partner: typeof allPartners[0] }> = [];
 
-  for (const match of parsed.data.matches) {
+  for (const match of lenientParsed.data.matches) {
     if (match.confidenceScore < threshold) continue;
 
     const oppTitle = normalize(match.opportunityTitle);
@@ -445,19 +451,92 @@ async function matchPartnersAgainstOpportunities(
       continue;
     }
 
-    matches.push({
-      opportunityId: opp.id,
-      opportunityTitle: opp.title,
-      partnerId: partner.id,
-      partnerName: partner.name,
-      confidenceScore: match.confidenceScore,
-      rationale: match.rationale,
-      clientFacingLanguage: match.clientFacingLanguage,
-      outreachDraftEmail: match.outreachDraftEmail,
-    });
+    // Check if all required fields are present
+    if (match.rationale && match.clientFacingLanguage) {
+      matches.push({
+        opportunityId: opp.id,
+        opportunityTitle: opp.title,
+        partnerId: partner.id,
+        partnerName: partner.name,
+        confidenceScore: match.confidenceScore,
+        rationale: match.rationale,
+        clientFacingLanguage: match.clientFacingLanguage,
+        outreachDraftEmail: match.outreachDraftEmail,
+      });
+    } else {
+      console.warn(
+        `Incomplete match: ${match.partnerName} → ${match.opportunityTitle} (missing: ${!match.rationale ? "rationale " : ""}${!match.clientFacingLanguage ? "clientFacingLanguage" : ""}). Queuing for retry.`
+      );
+      incompleteMatches.push({ match, opp, partner });
+    }
+  }
+
+  // Retry incomplete matches individually — smaller prompt = Haiku won't truncate
+  if (incompleteMatches.length > 0) {
+    console.log(`Retrying ${incompleteMatches.length} incomplete match(es)...`);
+
+    for (const { match, opp, partner } of incompleteMatches) {
+      try {
+        const retryResult = await retrySingleMatch(opp, partner, batchPartners, threshold);
+        if (retryResult) {
+          matches.push(retryResult);
+          console.log(`Retry succeeded: ${partner.name} → ${opp.title}`);
+        } else {
+          console.warn(`Retry returned no match: ${partner.name} → ${opp.title}`);
+        }
+      } catch (err) {
+        console.error(`Retry failed for ${partner.name} → ${opp.title}:`, err);
+      }
+    }
   }
 
   return matches;
+}
+
+/**
+ * Retry a single match that was incomplete in the batch response.
+ * Sends just one opportunity + one partner to Claude — tiny prompt, reliable output.
+ */
+async function retrySingleMatch(
+  opp: { id: string; title: string; category: string; description: string; industries: string[]; relevantFor: string; dateDisplayText: string; contactMethod: string; sourceUrl: string | null },
+  partner: { id: string; name: string; company: string; matchingSummary: string },
+  batchPartners: Array<{ id: string; name: string; company: string; matchingSummary: string }>,
+  threshold: number
+): Promise<ResolvedMatch | null> {
+  const { system, user } = buildFullMatchingPrompt(
+    [{ title: opp.title, category: opp.category, description: opp.description, industries: opp.industries, relevantFor: opp.relevantFor, dateDisplayText: opp.dateDisplayText, contactMethod: opp.contactMethod, sourceUrl: opp.sourceUrl }],
+    [{ name: partner.name, company: partner.company, matchingSummary: partner.matchingSummary }],
+    threshold
+  );
+
+  const rawResponse = await callClaude(user, {
+    system,
+    model: "haiku",
+    maxTokens: 2048,
+    retries: 0,
+  });
+
+  let jsonStr = rawResponse.trim();
+  if (jsonStr.startsWith("```")) {
+    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+  }
+
+  const parsed = BatchMatchResponseSchema.safeParse(JSON.parse(jsonStr));
+  if (!parsed.success || parsed.data.matches.length === 0) {
+    return null;
+  }
+
+  const m = parsed.data.matches[0];
+  return {
+    opportunityId: opp.id,
+    opportunityTitle: opp.title,
+    partnerId: partner.id,
+    partnerName: partner.name,
+    confidenceScore: m.confidenceScore,
+    rationale: m.rationale,
+    clientFacingLanguage: m.clientFacingLanguage,
+    outreachDraftEmail: m.outreachDraftEmail,
+  };
 }
 
 // ---------------------------------------------------------------------------
