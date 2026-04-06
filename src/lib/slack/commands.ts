@@ -12,9 +12,6 @@ import {
   postSlackMessage,
 } from "@/lib/slack/formatter";
 import { prisma } from "@/lib/clients/db";
-import { listDossierFiles, downloadFile } from "@/lib/clients/google-drive";
-import { parseDocxToText } from "@/lib/utils/docx-parser";
-import { extractAndUpsertProfile } from "@/lib/ingest/extract-and-upsert";
 
 interface CommandResult {
   /** Immediate acknowledgment shown to the user (ephemeral) */
@@ -684,67 +681,19 @@ async function partnerSync(
   text: string,
   responseUrl: string
 ): Promise<void> {
-  try {
-    const searchTerm = text.replace(/^sync\s+/i, "").trim();
+  const searchTerm = text.replace(/^sync\s+/i, "").trim();
 
-    // Handle "sync all" — trigger GitHub Action for bulk import
-    if (searchTerm.toLowerCase() === "all") {
-      await triggerBulkImport(responseUrl);
-      return;
-    }
-
-    const folderId = process.env.GOOGLE_DRIVE_DOSSIER_FOLDER_ID;
-
-    if (!folderId) {
-      await respond(responseUrl, `:x: GOOGLE_DRIVE_DOSSIER_FOLDER_ID not configured.`);
-      return;
-    }
-
-    if (!searchTerm) {
-      await respond(
-        responseUrl,
-        `:warning: Usage:\n\`/partner sync [search term]\` — Re-extract a single dossier\n\`/partner sync all\` — Re-extract all dossiers (runs in background)\nExample: \`/partner sync Amanda\` or \`/partner sync Fernlove\``
-      );
-      return;
-    }
-
-    // List all dossier files and find one matching the search term
-    const files = await listDossierFiles(folderId);
-    const searchLower = searchTerm.toLowerCase();
-    const match = files.find((f) => f.name.toLowerCase().includes(searchLower));
-
-    if (!match) {
-      const available = files.map((f) => f.name).slice(0, 10).join("\n");
-      await respond(
-        responseUrl,
-        `:warning: No dossier file found matching "${searchTerm}". Available files:\n\`\`\`${available}\`\`\``
-      );
-      return;
-    }
-
-    await respond(responseUrl, `:hourglass_flowing_sand: Found *${match.name}* — downloading and extracting...`);
-
-    // Download and parse
-    const buffer = await downloadFile(match.fileId, match.mimeType);
-    const rawText = await parseDocxToText(buffer);
-
-    // Extract and upsert profile
-    const result = await extractAndUpsertProfile(rawText, {
-      sourceType: "drive_import",
-      sourceReference: match.fileId,
-    });
-
-    const action = result.isNew ? "Created" : "Updated";
+  if (!searchTerm) {
     await respond(
       responseUrl,
-      `:white_check_mark: ${action} profile for *${result.profile.name}* (${result.profile.company}) from *${match.name}*.\n\nThis partner's matching data has been refreshed and will be used in the next matching run.`
+      `:warning: Usage:\n\`/partner sync [search term]\` — Re-extract a matching dossier from Drive\n\`/partner sync all\` — Re-extract all dossiers\nExample: \`/partner sync Amanda\` or \`/partner sync Fernlove\``
     );
-  } catch (error) {
-    await respond(
-      responseUrl,
-      `:x: Sync failed: ${error instanceof Error ? error.message : "Unknown error"}`
-    );
+    return;
   }
+
+  // Both single and bulk sync run via GitHub Action (no Vercel timeout risk)
+  const filter = searchTerm.toLowerCase() === "all" ? "" : searchTerm;
+  await triggerDossierImport(filter, responseUrl);
 }
 
 async function partnerNote(
@@ -821,10 +770,10 @@ async function partnerNote(
   }
 }
 
-async function triggerBulkImport(responseUrl: string): Promise<void> {
+async function triggerDossierImport(filter: string, responseUrl: string): Promise<void> {
   const githubPat = process.env.GITHUB_PAT;
   if (!githubPat) {
-    await respond(responseUrl, `:x: GITHUB_PAT not configured. Cannot trigger bulk import.`);
+    await respond(responseUrl, `:x: GITHUB_PAT not configured. Cannot trigger dossier import.`);
     return;
   }
 
@@ -838,26 +787,28 @@ async function triggerBulkImport(responseUrl: string): Promise<void> {
           Accept: "application/vnd.github.v3+json",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ ref: "main" }),
+        body: JSON.stringify({ ref: "main", inputs: { filter } }),
       }
     );
+
+    const label = filter ? `dossiers matching "${filter}"` : "all dossiers";
 
     if (res.status === 204) {
       await respond(
         responseUrl,
-        `:white_check_mark: *Bulk dossier import started.* Processing all files in the Drive folder — this runs in the background and may take several minutes. A summary will be posted to the channel when complete.`
+        `:white_check_mark: *Dossier import started* for ${label}. This runs in the background and may take several minutes. A summary will be posted to the channel when complete.`
       );
     } else {
       const body = await res.text();
       await respond(
         responseUrl,
-        `:x: Failed to trigger bulk import (status ${res.status}): ${body}`
+        `:x: Failed to trigger import (status ${res.status}): ${body}`
       );
     }
   } catch (error) {
     await respond(
       responseUrl,
-      `:x: Failed to trigger bulk import: ${error instanceof Error ? error.message : "Unknown error"}`
+      `:x: Failed to trigger import: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }

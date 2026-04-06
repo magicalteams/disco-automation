@@ -40,16 +40,22 @@ async function main() {
 
   const delayMs = parseInt(process.env.IMPORT_DELAY_MS || "2000", 10);
   const dryRun = process.env.IMPORT_DRY_RUN === "true";
+  const filter = process.env.IMPORT_FILTER?.trim() || "";
 
   console.log(`\nAntonym Intelligence — Dossier Import`);
   console.log(`======================================`);
   console.log(`Folder ID: ${folderId}`);
   console.log(`Delay between files: ${delayMs}ms`);
-  console.log(`Dry run: ${dryRun}\n`);
+  console.log(`Dry run: ${dryRun}`);
+  if (filter) console.log(`Filter: "${filter}"`);
+  console.log();
 
   // 1. List files
-  const files = await listDossierFiles(folderId);
-  console.log(`Found ${files.length} dossier files in Drive folder.\n`);
+  const allFiles = await listDossierFiles(folderId);
+  const files = filter
+    ? allFiles.filter((f) => f.name.toLowerCase().includes(filter.toLowerCase()))
+    : allFiles;
+  console.log(`Found ${files.length} dossier files${filter ? ` matching "${filter}"` : ""} (${allFiles.length} total in folder).\n`);
 
   if (files.length === 0) {
     console.log(

@@ -2,6 +2,11 @@ name: Import Dossiers from Google Drive
 
 on:
   workflow_dispatch:
+    inputs:
+      filter:
+        description: 'Optional file name filter (e.g. "Amanda"). Leave empty to import all.'
+        required: false
+        default: ''
 
 jobs:
   import:
@@ -35,6 +40,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
           IMPORT_DELAY_MS: "5000"
+          IMPORT_FILTER: ${{ github.event.inputs.filter }}
         run: npm run import:dossiers
 
       - name: Notify Slack on success
