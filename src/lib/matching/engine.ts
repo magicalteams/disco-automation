@@ -596,17 +596,21 @@ async function triggerNextBatch(
       : `Triggering batch ${batchIndex} for ${weekIdentifier}`
   );
 
-  // Fire-and-forget — the response will be handled by the continue endpoint
-  fetch(`${appUrl}/api/match/continue`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${cronSecret}`,
-    },
-    body: JSON.stringify(body),
-  }).catch((err) => {
+  // Await the fetch to ensure the request is sent before the function exits.
+  // We don't need the response body — just need the request to reach the server.
+  try {
+    const res = await fetch(`${appUrl}/api/match/continue`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cronSecret}`,
+      },
+      body: JSON.stringify(body),
+    });
+    console.log(`Triggered next step — status ${res.status}`);
+  } catch (err) {
     console.error("Failed to trigger next batch:", err);
-  });
+  }
 }
 
 // ---------------------------------------------------------------------------
