@@ -38,7 +38,6 @@ interface MatchRunSummary {
     company: string;
     confidenceScore: number;
     rationale: string;
-    internalLanguage: string;
     clientFacingLanguage: string;
     outreachDraftEmail?: string;
   }>;
@@ -53,7 +52,7 @@ interface ResolvedMatch {
   partnerName: string;
   confidenceScore: number;
   rationale: string;
-  internalLanguage: string;
+
   clientFacingLanguage: string;
   outreachDraftEmail?: string;
 }
@@ -196,7 +195,6 @@ export async function runWeeklyMatching(
         company: partners.find((p) => p.id === m.partnerId)?.company ?? "",
         confidenceScore: m.confidenceScore,
         rationale: m.rationale,
-        internalLanguage: m.internalLanguage,
         clientFacingLanguage: m.clientFacingLanguage,
         outreachDraftEmail: m.outreachDraftEmail,
       }));
@@ -329,7 +327,6 @@ export async function postMatchResultsToSlack(
     partnerName: r.partner.name,
     confidenceScore: r.confidenceScore,
     rationale: r.rationale,
-    internalLanguage: r.internalLanguage,
     clientFacingLanguage: r.clientFacingLanguage,
     outreachDraftEmail: r.outreachDraftEmail ?? undefined,
   }));
@@ -455,7 +452,6 @@ async function matchPartnersAgainstOpportunities(
       partnerName: partner.name,
       confidenceScore: match.confidenceScore,
       rationale: match.rationale,
-      internalLanguage: match.internalLanguage,
       clientFacingLanguage: match.clientFacingLanguage,
       outreachDraftEmail: match.outreachDraftEmail,
     });
@@ -480,7 +476,6 @@ async function saveBatchResults(
       partnerId: m.partnerId,
       confidenceScore: m.confidenceScore,
       rationale: m.rationale,
-      internalLanguage: m.internalLanguage,
       clientFacingLanguage: m.clientFacingLanguage,
       outreachDraftEmail: m.outreachDraftEmail ?? null,
       matchRunId,

@@ -119,7 +119,6 @@ export async function GET(request: NextRequest) {
       partnerCompany: r.partner.company,
       confidenceScore: r.confidenceScore,
       rationale: r.rationale,
-      internalLanguage: r.internalLanguage,
       clientFacingLanguage: r.clientFacingLanguage,
     })),
   });

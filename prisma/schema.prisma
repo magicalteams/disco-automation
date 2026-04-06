@@ -93,7 +93,6 @@ model MatchResult {
 
   confidenceScore      Float
   rationale            String
-  internalLanguage     String
   clientFacingLanguage String
   outreachDraftEmail   String?
 

@@ -10,7 +10,6 @@ interface MatchData {
   partnerName: string;
   confidenceScore: number;
   rationale: string;
-  internalLanguage: string;
   clientFacingLanguage: string;
   outreachDraftEmail?: string;
 }
@@ -151,8 +150,6 @@ export function formatMatchesToSlack(
             category || dateInfo ? `> _${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
             `> _Why:_ ${match.rationale}`,
             `>`,
-            `> :speech_balloon: *Pod Language:* "${match.internalLanguage}"`,
-            `>`,
             `> :speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
             dateWarning || null,
             link || null,
@@ -281,8 +278,6 @@ export function formatPartnerMatchesToSlack(
           `> ${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
           category || dateInfo ? `> _${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
           `> _Why:_ ${match.rationale}`,
-          `>`,
-          `> :speech_balloon: *Pod Language:* "${match.internalLanguage}"`,
           `>`,
           `> :speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
           dateWarning || null,
@@ -621,8 +616,6 @@ export function formatSingleMatchBlocks(
           `${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
           category || dateInfo ? `_${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
           `_Why:_ ${match.rationale}`,
-          "",
-          `:speech_balloon: *Pod Language:* "${match.internalLanguage}"`,
           "",
           `:speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
         ]

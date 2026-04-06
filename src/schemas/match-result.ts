@@ -5,7 +5,6 @@ export const MatchOutputSchema = z.object({
   partnerName: z.string(),
   confidenceScore: z.number().min(0).max(1),
   rationale: z.string(),
-  internalLanguage: z.string(),
   clientFacingLanguage: z.string(),
   outreachDraftEmail: z.string().optional(),
 });

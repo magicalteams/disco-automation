@@ -115,7 +115,6 @@ async function main() {
           `    ${bar}${empty} ${m.confidenceScore.toFixed(2)}  ${m.partnerName} / ${m.company}`
         );
         console.log(`      Why: ${m.rationale}`);
-        console.log(`      Pod: "${m.internalLanguage}"`);
         console.log(`      Client: "${m.clientFacingLanguage}"`);
         console.log();
       }

@@ -28,7 +28,7 @@ export function buildFullMatchingPrompt(
 
 You consider: industry fit, service alignment, geographic relevance, career stage, unique positioning, current challenges, and non-obvious connections. You are critical — a forced match helps no one. Only surface genuinely relevant pairings.
 
-CRITICAL: Return valid JSON only — no markdown fences, no commentary. Every match object MUST include ALL required fields: opportunityTitle, partnerName, confidenceScore, rationale, internalLanguage, clientFacingLanguage. Never omit any field.`;
+CRITICAL: Return valid JSON only — no markdown fences, no commentary. Every match object MUST include ALL required fields: opportunityTitle, partnerName, confidenceScore, rationale, clientFacingLanguage. Never omit any field.`;
 
   const partnerBlock = partners
     .map(
@@ -66,7 +66,6 @@ INSTRUCTIONS:
    - "partnerName": exact name as listed above
    - "confidenceScore": 0.0 to 1.0 (0.7+ = strong match, 0.5-0.7 = worth considering)
    - "rationale": 2-3 sentences explaining why this partner specifically. Be concrete — reference their services, positioning, or challenges.
-   - "internalLanguage": 1-2 sentences the pod/strategist would say to each other about this match (professional shorthand, assumes context)
    - "clientFacingLanguage": 2-3 sentences to share with the client (warm, professional, specific to the opportunity — as if writing a brief email excerpt)
 4. Consider non-obvious connections: a partner's current challenges might make an opportunity relevant even without direct industry overlap.
 5. If NO partners are genuinely relevant to an opportunity, simply don't include matches for it. Empty results are better than bad matches.
@@ -78,12 +77,11 @@ REQUIRED FIELDS for every match object (do NOT omit any):
 - "partnerName" (string, required)
 - "confidenceScore" (number, required)
 - "rationale" (string, required)
-- "internalLanguage" (string, required)
 - "clientFacingLanguage" (string, required)
 - "outreachDraftEmail" (string, only for confidence >= 0.7)
 
 Return JSON in this exact format:
-{"matches": [{"opportunityTitle": "...", "partnerName": "...", "confidenceScore": 0.85, "rationale": "...", "internalLanguage": "...", "clientFacingLanguage": "...", "outreachDraftEmail": "Subject: ...\\n\\nHey [Partner first name],\\n\\n...\\n\\nBest,\\n[Your name]"}]}
+{"matches": [{"opportunityTitle": "...", "partnerName": "...", "confidenceScore": 0.85, "rationale": "...", "clientFacingLanguage": "...", "outreachDraftEmail": "Subject: ...\\n\\nHey [Partner first name],\\n\\n...\\n\\nBest,\\n[Your name]"}]}
 
 Return ONLY the JSON object. No other text.`;
 
