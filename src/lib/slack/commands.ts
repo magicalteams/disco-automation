@@ -227,6 +227,13 @@ function handleMatch(text: string, responseUrl: string): CommandResult {
     };
   }
 
+  if (lower === "status") {
+    return {
+      ack: ":mag: Fetching match status...",
+      process: () => runMatchStatus(responseUrl),
+    };
+  }
+
   if (isDryRun) {
     return {
       ack: ":hourglass_flowing_sand: Running matching in dry-run mode... Results will appear here when ready.",
@@ -309,6 +316,91 @@ async function runReset(responseUrl: string): Promise<void> {
     await respond(
       responseUrl,
       `:x: Reset failed: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+async function runMatchStatus(responseUrl: string): Promise<void> {
+  try {
+    const weekIdentifier = getWeekIdentifier(new Date());
+    const matchRun = await prisma.matchRun.findUnique({
+      where: { weekIdentifier },
+    });
+
+    if (!matchRun || matchRun.status !== "completed") {
+      await respond(
+        responseUrl,
+        `:information_source: No completed match run found for ${weekIdentifier}.`
+      );
+      return;
+    }
+
+    const results = await prisma.matchResult.findMany({
+      where: { matchRunId: matchRun.id },
+      include: {
+        partner: { select: { name: true, company: true } },
+        opportunity: { select: { title: true, category: true } },
+      },
+      orderBy: [{ partner: { name: "asc" } }, { confidenceScore: "desc" }],
+    });
+
+    if (results.length === 0) {
+      await respond(responseUrl, `:information_source: No matches found for ${weekIdentifier}.`);
+      return;
+    }
+
+    const statusEmoji: Record<string, string> = {
+      shared: ":white_check_mark:",
+      reviewing: ":eyes:",
+      skipped: ":x:",
+      pending: ":white_circle:",
+    };
+
+    // Group by partner
+    const byPartner = new Map<string, typeof results>();
+    for (const r of results) {
+      const key = r.partner.name;
+      const existing = byPartner.get(key) || [];
+      existing.push(r);
+      byPartner.set(key, existing);
+    }
+
+    const sections: string[] = [];
+    let totalShared = 0;
+    let totalReviewing = 0;
+    let totalSkipped = 0;
+    let totalPending = 0;
+
+    for (const [partnerName, matches] of byPartner) {
+      const partner = matches[0].partner;
+      const lines = matches.map((m) => {
+        const emoji = statusEmoji[m.reactionStatus] || ":white_circle:";
+        if (m.reactionStatus === "shared") totalShared++;
+        else if (m.reactionStatus === "reviewing") totalReviewing++;
+        else if (m.reactionStatus === "skipped") totalSkipped++;
+        else totalPending++;
+        return `  ${emoji} ${m.opportunity.title} (${m.confidenceScore.toFixed(2)})`;
+      });
+      sections.push(`*${partnerName} / ${partner.company}*\n${lines.join("\n")}`);
+    }
+
+    const summary = [
+      totalShared > 0 ? `${totalShared} shared` : null,
+      totalReviewing > 0 ? `${totalReviewing} reviewing` : null,
+      totalSkipped > 0 ? `${totalSkipped} skipped` : null,
+      totalPending > 0 ? `${totalPending} pending` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+    await respond(
+      responseUrl,
+      `*Match Status — ${weekIdentifier}* (${results.length} matches: ${summary})\n\n${sections.join("\n\n")}`
+    );
+  } catch (error) {
+    await respond(
+      responseUrl,
+      `:x: Failed to get status: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }

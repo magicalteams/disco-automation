@@ -70,10 +70,27 @@ Some opportunities appear in every newsletter and match too broadly (e.g., a job
 
 Excluded opportunities are filtered out before matching runs — they won't appear for any client.
 
+## Checking Status at a Glance
+
+To see a summary of all matches for the week and their current status:
+
+```
+/match status
+```
+
+This shows every match grouped by partner, with an emoji indicating what's been done:
+- :white_circle: Pending — no one has reacted yet
+- :eyes: Reviewing — someone is looking into it
+- :white_check_mark: Shared — sent to the client
+- :x: Skipped — not relevant
+
+Anyone on the team can run this at any time to see where things stand.
+
 ## Other Useful Commands
 
 | Command | What it does |
 |---------|-------------|
+| `/match status` | See all matches for the week and their reaction status |
 | `/partner list` | Show all clients and their mapped Slack channels |
 | `/partner set-channel [name] [#channel]` | Map a client to a Slack channel |
 | `/match` | Manually trigger matching (if you don't want to wait for Monday) |
@@ -91,4 +108,4 @@ Excluded opportunities are filtered out before matching runs — they won't appe
 **Ongoing:**
 - Use `/partner note` to refine what gets matched for your client
 - Use `/partner exclude` to remove noisy recurring opportunities
-- Reactions are tracked — you can see what's been acted on at a glance
+- Type `/match status` to see what's been acted on across all partners
