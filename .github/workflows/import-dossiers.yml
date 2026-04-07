@@ -49,10 +49,10 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
         run: |
-          curl -X POST https://slack.com/api/chat.postMessage \
+          curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":white_check_mark: *Bulk dossier import complete.* Check the logs for details. All partner profiles have been refreshed and will be used in the next matching run.\"}"
+            -H "Content-type: application/json; charset=utf-8" \
+            --data "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":white_check_mark: *Bulk dossier import complete.* Check the logs for details. All partner profiles have been refreshed and will be used in the next matching run.\"}"
 
       - name: Notify Slack on failure
         if: failure()
@@ -60,7 +60,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
         run: |
-          curl -X POST https://slack.com/api/chat.postMessage \
+          curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":x: *Bulk dossier import failed.* Check the GitHub Actions logs for details.\"}"
+            -H "Content-type: application/json; charset=utf-8" \
+            --data "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":x: *Bulk dossier import failed.* Check the GitHub Actions logs for details.\"}"

@@ -50,7 +50,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL_MATCHES: ${{ secrets.SLACK_CHANNEL_MATCHES }}
         run: |
-          curl -X POST https://slack.com/api/chat.postMessage \
+          curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":x: *Weekly matching failed.* Check GitHub Actions logs for details.\"}"
+            -H "Content-type: application/json; charset=utf-8" \
+            --data "{\"channel\": \"$SLACK_CHANNEL_MATCHES\", \"text\": \":x: *Weekly matching failed.* Check GitHub Actions logs for details.\"}"
