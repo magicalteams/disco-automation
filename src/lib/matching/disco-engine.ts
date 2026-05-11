@@ -209,7 +209,7 @@ export async function processAndMatchTranscript(
     }
 
     // 7. Direction 2: Offers → Partner Profiles
-    const offerToPartnerMatches: OfferToPartnerMatch[] = [];
+    const offerToPartnerMatches: Array<OfferToPartnerMatch & { partnerId: string }> = [];
 
     if (extraction.offers.length > 0) {
       const partners = await prisma.partnerProfile.findMany({
@@ -243,24 +243,23 @@ export async function processAndMatchTranscript(
         );
 
         if (parsed.success) {
+          const normalize = (s: string) =>
+            s.trim().replace(/\s+/g, " ").toLowerCase();
+
           for (const m of parsed.data.matches) {
-            if (m.confidenceScore >= threshold) {
-              // Resolve partner name to ID
-              const normalize = (s: string) =>
-                s.trim().replace(/\s+/g, " ").toLowerCase();
-              const matchName = normalize(m.partnerName);
-              const partner = partners.find((p) => {
-                const dbName = normalize(p.name);
-                return dbName === matchName || matchName.startsWith(dbName);
-              });
-              if (!partner) {
-                console.warn(
-                  `Partner "${m.partnerName}" not found, skipping disco match`
-                );
-                continue;
-              }
-              offerToPartnerMatches.push(m);
+            if (m.confidenceScore < threshold) continue;
+            const matchName = normalize(m.partnerName);
+            const partner = partners.find((p) => {
+              const dbName = normalize(p.name);
+              return dbName === matchName || matchName.startsWith(dbName);
+            });
+            if (!partner) {
+              console.warn(
+                `Partner "${m.partnerName}" not found, skipping disco match`
+              );
+              continue;
             }
+            offerToPartnerMatches.push({ ...m, partnerId: partner.id });
           }
         } else {
           console.error(
@@ -283,22 +282,15 @@ export async function processAndMatchTranscript(
           rationale: m.rationale,
           clientFacingLanguage: m.clientFacingLanguage,
         })),
-        ...offerToPartnerMatches.map((m) => {
-          const partners_list = offerToPartnerMatches; // already filtered
-          const normalize = (s: string) =>
-            s.trim().replace(/\s+/g, " ").toLowerCase();
-          // Re-resolve partner ID for storage
-          // We need the partners list — fetch from closure
-          return {
-            processedMeetingId: processedMeeting.id,
-            direction: "offer_to_partner" as const,
-            sourceStatement: extraction.offers[m.offerIndex]?.statement ?? "",
-            targetId: m.partnerName, // Store name as targetId for offer→partner
-            confidenceScore: m.confidenceScore,
-            rationale: m.rationale,
-            clientFacingLanguage: m.clientFacingLanguage,
-          };
-        }),
+        ...offerToPartnerMatches.map((m) => ({
+          processedMeetingId: processedMeeting.id,
+          direction: "offer_to_partner" as const,
+          sourceStatement: extraction.offers[m.offerIndex]?.statement ?? "",
+          targetId: m.partnerId,
+          confidenceScore: m.confidenceScore,
+          rationale: m.rationale,
+          clientFacingLanguage: m.clientFacingLanguage,
+        })),
       ];
 
       await prisma.$transaction(async (tx) => {

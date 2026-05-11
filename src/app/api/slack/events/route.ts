@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/clients/db";
+import { verifySlackSignature } from "@/lib/slack/verify";
 
 /**
  * Emoji → reactionStatus mapping.
@@ -23,7 +24,19 @@ const REACTION_MAP: Record<string, string> = {
  *   Subscribe to bot events: reaction_added, reaction_removed
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
+  // Verify HMAC signature before trusting any of the payload. Read the raw
+  // body once (Slack signs the raw bytes), then parse as JSON.
+  const rawBody = await request.text();
+  if (!verifySlackSignature(rawBody, request.headers)) {
+    return new Response("Invalid signature", { status: 401 });
+  }
+
+  let body: { type?: string; challenge?: string; event?: { type: string; reaction: string; item: { type: string; channel: string; ts: string }; user: string } };
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return new Response("Invalid JSON", { status: 400 });
+  }
 
   // Slack URL verification challenge (sent when you first set up the events URL)
   if (body.type === "url_verification") {
@@ -31,7 +44,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Must respond with 200 within 3 seconds — process async
-  if (body.type === "event_callback") {
+  if (body.type === "event_callback" && body.event) {
     const event = body.event;
 
     if (event.type === "reaction_added") {

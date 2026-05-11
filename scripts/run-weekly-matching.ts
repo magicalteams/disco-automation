@@ -13,7 +13,7 @@
  *   DRY_RUN — set to "true" for dry-run mode (no DB writes, no Slack posts)
  *   MATCH_CONFIDENCE_THRESHOLD — override threshold (default: 0.6)
  */
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../src/lib/clients/db";
 import { callClaude, getModelId } from "../src/lib/clients/anthropic";
 import { buildFullMatchingPrompt } from "../src/lib/prompts/match-opportunities";
 import {
@@ -31,7 +31,6 @@ import {
 import { syncAndExpireOpportunities } from "../src/lib/matching/pre-match-sync";
 import { getWeekIdentifier } from "../src/lib/utils/date-classifier";
 
-const prisma = new PrismaClient();
 const BATCH_SIZE = 4; // Partners per Claude call (for prompt size, not timeout)
 const DEFAULT_THRESHOLD = parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD || "0.6");
 
@@ -78,16 +77,20 @@ async function main() {
 
   await ensureDbConnection();
 
+  // Take one timestamp and reuse it for expire + active-filter so an
+  // opportunity expiring mid-run can't slip through both gates.
+  const now = new Date();
+
   // 1. Sync sheet overrides and auto-expire
   console.log("Syncing sheet overrides and expiring past-due opportunities...");
-  const sync = await syncAndExpireOpportunities(weekIdentifier);
+  const sync = await syncAndExpireOpportunities(weekIdentifier, now);
   console.log(`  ${sync.overrideCount} overrides applied, ${sync.expiredCount} auto-expired\n`);
 
   // 2. Fetch all active, unexpired opportunities (across all weeks)
   const allOpportunities = await prisma.newsletterOpportunity.findMany({
     where: {
       status: "active",
-      defaultExpiry: { gt: new Date() },
+      defaultExpiry: { gt: now },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -157,6 +160,20 @@ async function main() {
     if (existing?.status === "completed") {
       console.log(`Match run for ${weekIdentifier} already completed. Use /match reset first.`);
       return;
+    }
+
+    // Clean up orphan matches from a prior failed/running attempt — they
+    // were created in the DB but never posted to Slack, so they're invisible
+    // to humans and would dup-key against the new run otherwise.
+    if (existing) {
+      const orphans = await prisma.matchResult.deleteMany({
+        where: { matchRunId: existing.id },
+      });
+      if (orphans.count > 0) {
+        console.log(
+          `Cleaned up ${orphans.count} orphan matches from previous ${existing.status} run\n`
+        );
+      }
     }
 
     matchRun = existing

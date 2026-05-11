@@ -62,49 +62,66 @@ export async function extractNewsletter(
     system,
     model: "haiku",
     maxTokens: 8192,
-    retries: 0,
+    retries: 2,
   });
 
-  // Parse JSON response
+  // Parse JSON response with explicit error context — bad model output is
+  // a recurring failure mode, so surface it loudly instead of crashing on
+  // an opaque SyntaxError.
   let jsonStr = rawResponse.trim();
   if (jsonStr.startsWith("```")) {
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   }
 
-  const extractedArray = z
-    .array(ExtractedOpportunitySchema)
-    .parse(JSON.parse(jsonStr));
-
-  // Write to database with date classification
-  const opportunities = [];
-  for (const extracted of extractedArray) {
-    const dateInfo = classifyAndSetExpiry(extracted, publishDate, ttlWeeks);
-    const id = `${weekId}-${String(extracted.sequenceNumber).padStart(3, "0")}`;
-
-    const opp = await prisma.newsletterOpportunity.create({
-      data: {
-        id,
-        newsletterIssue: `Issue #${input.issueNumber}`,
-        newsletterDate: publishDate,
-        weekIdentifier: weekId,
-        category: extracted.category,
-        title: extracted.title,
-        description: extracted.description,
-        industries: extracted.industries,
-        relevantFor: extracted.relevantFor,
-        eventDate: dateInfo.eventDate,
-        deadline: dateInfo.deadline,
-        dateConfidence: extracted.dateConfidence,
-        dateDisplayText: extracted.dateDisplayText,
-        defaultExpiry: dateInfo.defaultExpiry,
-        status: dateInfo.status,
-        sourceUrl: extracted.sourceUrl,
-        contactMethod: extracted.contactMethod,
-        audienceRestrictions: extracted.audienceRestrictions ?? "none",
-      },
-    });
-    opportunities.push(opp);
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(jsonStr);
+  } catch (err) {
+    throw new Error(
+      `Newsletter extraction returned invalid JSON: ${err instanceof Error ? err.message : err}. Raw response prefix: ${jsonStr.slice(0, 200)}`
+    );
   }
+
+  const validated = z.array(ExtractedOpportunitySchema).safeParse(parsedJson);
+  if (!validated.success) {
+    throw new Error(
+      `Newsletter extraction failed schema validation: ${validated.error.message}`
+    );
+  }
+  const extractedArray = validated.data;
+
+  // Write to database atomically — partial writes leave the existing-check
+  // at the top of this function falsely reporting "already extracted" on
+  // re-runs, causing silent data loss.
+  const opportunities = await prisma.$transaction(
+    extractedArray.map((extracted) => {
+      const dateInfo = classifyAndSetExpiry(extracted, publishDate, ttlWeeks);
+      const id = `${weekId}-${String(extracted.sequenceNumber).padStart(3, "0")}`;
+
+      return prisma.newsletterOpportunity.create({
+        data: {
+          id,
+          newsletterIssue: `Issue #${input.issueNumber}`,
+          newsletterDate: publishDate,
+          weekIdentifier: weekId,
+          category: extracted.category,
+          title: extracted.title,
+          description: extracted.description,
+          industries: extracted.industries,
+          relevantFor: extracted.relevantFor,
+          eventDate: dateInfo.eventDate,
+          deadline: dateInfo.deadline,
+          dateConfidence: extracted.dateConfidence,
+          dateDisplayText: extracted.dateDisplayText,
+          defaultExpiry: dateInfo.defaultExpiry,
+          status: dateInfo.status,
+          sourceUrl: extracted.sourceUrl,
+          contactMethod: extracted.contactMethod,
+          audienceRestrictions: extracted.audienceRestrictions ?? "none",
+        },
+      });
+    })
+  );
 
   // Push opportunity rows to Google Sheet for human review
   try {

@@ -1,48 +1,48 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
 /**
- * Verify that an incoming request is genuinely from Slack using
- * HMAC-SHA256 signature validation.
- *
- * Slack sends application/x-www-form-urlencoded bodies for slash commands.
- * We need the raw body text to compute the signature, then parse it.
+ * Body-format-agnostic Slack signature check. Reads timestamp + signature
+ * headers, validates the HMAC over `v0:{timestamp}:{rawBody}`, and rejects
+ * timestamps older than 5 minutes (replay protection).
  */
-export async function verifySlackRequest(
-  request: Request
-): Promise<{ valid: boolean; body: URLSearchParams }> {
+export function verifySlackSignature(
+  rawBody: string,
+  headers: Headers
+): boolean {
   const signingSecret = process.env.SLACK_SIGNING_SECRET;
   if (!signingSecret) {
     console.error("SLACK_SIGNING_SECRET not configured");
-    return { valid: false, body: new URLSearchParams() };
+    return false;
   }
 
-  const timestamp = request.headers.get("x-slack-request-timestamp");
-  const signature = request.headers.get("x-slack-signature");
+  const timestamp = headers.get("x-slack-request-timestamp");
+  const signature = headers.get("x-slack-signature");
 
-  if (!timestamp || !signature) {
-    return { valid: false, body: new URLSearchParams() };
-  }
+  if (!timestamp || !signature) return false;
 
-  // Reject requests older than 5 minutes (replay protection)
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - parseInt(timestamp, 10)) > 300) {
-    return { valid: false, body: new URLSearchParams() };
-  }
+  if (Math.abs(now - parseInt(timestamp, 10)) > 300) return false;
 
-  const rawBody = await request.text();
   const baseString = `v0:${timestamp}:${rawBody}`;
   const computed = `v0=${createHmac("sha256", signingSecret).update(baseString).digest("hex")}`;
 
   const computedBuf = Buffer.from(computed);
   const signatureBuf = Buffer.from(signature);
-
-  // timingSafeEqual throws if lengths differ — guard against that
   if (computedBuf.length !== signatureBuf.length) {
     console.error("Slack signature length mismatch — check SLACK_SIGNING_SECRET");
-    return { valid: false, body: new URLSearchParams() };
+    return false;
   }
 
-  const valid = timingSafeEqual(computedBuf, signatureBuf);
+  return timingSafeEqual(computedBuf, signatureBuf);
+}
 
+/**
+ * Slash-command flavor: reads form-encoded body and returns parsed params.
+ */
+export async function verifySlackRequest(
+  request: Request
+): Promise<{ valid: boolean; body: URLSearchParams }> {
+  const rawBody = await request.text();
+  const valid = verifySlackSignature(rawBody, request.headers);
   return { valid, body: new URLSearchParams(rawBody) };
 }

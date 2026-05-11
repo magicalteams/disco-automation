@@ -4,6 +4,31 @@ import { extractNewsletter } from "@/lib/ingest/extract-newsletter";
 import { postSlackMessage } from "@/lib/slack/formatter";
 import type { KnownBlock } from "@slack/web-api";
 
+// Retry a fallible async operation with exponential backoff. Used to absorb
+// transient blips from LinkedIn RSS and the Anthropic API during the daily
+// auto-ingest cron — without it, a single 5xx requires a manual /ingest.
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  attempts = 3
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt === attempts) break;
+      const delay = Math.pow(2, attempt) * 1000;
+      console.warn(
+        `${label} attempt ${attempt}/${attempts} failed: ${err instanceof Error ? err.message : err}. Retrying in ${delay}ms...`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastError;
+}
+
 export async function GET(request: NextRequest) {
   // Verify cron secret (Vercel sends this header for cron jobs)
   const authHeader = request.headers.get("authorization");
@@ -17,7 +42,9 @@ export async function GET(request: NextRequest) {
     console.log("Cron triggered: newsletter auto-ingest");
 
     // 1. Fetch latest newsletter from RSS
-    const fetchResult = await fetchLatestNewsletter();
+    const fetchResult = await withRetry("fetchLatestNewsletter", () =>
+      fetchLatestNewsletter()
+    );
 
     if (!fetchResult.found) {
       console.log(`No new newsletter found: ${fetchResult.reason}`);
@@ -36,11 +63,13 @@ export async function GET(request: NextRequest) {
     );
 
     // 2. Extract opportunities
-    const result = await extractNewsletter({
-      markdown: newsletter.markdownContent,
-      issueNumber: newsletter.issueNumber,
-      publishDate: newsletter.publishDate,
-    });
+    const result = await withRetry("extractNewsletter", () =>
+      extractNewsletter({
+        markdown: newsletter.markdownContent,
+        issueNumber: newsletter.issueNumber,
+        publishDate: newsletter.publishDate,
+      })
+    );
 
     if (result.isExisting) {
       console.log(

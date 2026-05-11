@@ -10,9 +10,14 @@ interface SyncResult {
  * Sync status overrides from Google Sheet and auto-expire past-due
  * opportunities. Run this before weekly matching to ensure the DB
  * reflects any manual review changes.
+ *
+ * `now` is taken as a parameter so the caller can share a single Date
+ * snapshot with the active-opportunity query, avoiding a race window
+ * where an opportunity expires between expire and fetch.
  */
 export async function syncAndExpireOpportunities(
-  weekIdentifier: string
+  weekIdentifier: string,
+  now: Date = new Date()
 ): Promise<SyncResult> {
   // 1. Sync status overrides from Google Sheet (only update changed rows)
   const overrides = await fetchStatusOverrides(weekIdentifier);
@@ -44,7 +49,7 @@ export async function syncAndExpireOpportunities(
   const expired = await prisma.newsletterOpportunity.updateMany({
     where: {
       status: "active",
-      defaultExpiry: { lt: new Date() },
+      defaultExpiry: { lt: now },
     },
     data: { status: "expired" },
   });

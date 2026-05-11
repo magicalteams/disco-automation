@@ -112,6 +112,8 @@ model MatchResult {
 
   @@unique([opportunityId, partnerId, matchRunId])
   @@index([slackMessageTs, slackChannelId])
+  @@index([partnerId])
+  @@index([matchRunId])
 }
 
 model MatchRun {

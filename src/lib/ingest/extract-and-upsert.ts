@@ -40,14 +40,31 @@ export async function extractAndUpsertProfile(
     maxTokens: 4096,
   });
 
-  // 3. Parse JSON (handle markdown fences the LLM sometimes adds)
+  // 3. Parse JSON (handle markdown fences the LLM sometimes adds). Both the
+  // raw JSON parse and the Zod validation can fail on bad model output; we
+  // surface a clear error so the bulk-import loop can skip and continue.
   let jsonStr = rawResponse.trim();
   if (jsonStr.startsWith("```")) {
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
   }
 
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(jsonStr);
+  } catch (err) {
+    throw new Error(
+      `Profile extraction returned invalid JSON: ${err instanceof Error ? err.message : err}. Raw response prefix: ${jsonStr.slice(0, 200)}`
+    );
+  }
+
   // 4. Validate with Zod
-  const extracted = PartnerProfileSchema.parse(JSON.parse(jsonStr));
+  const validated = PartnerProfileSchema.safeParse(parsedJson);
+  if (!validated.success) {
+    throw new Error(
+      `Profile extraction failed schema validation: ${validated.error.message}`
+    );
+  }
+  const extracted = validated.data;
 
   // 5. Check if profile already exists (to report isNew)
   const existing = await prisma.partnerProfile.findUnique({

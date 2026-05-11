@@ -40,6 +40,17 @@ function getEmoji(category: string): string {
   return CATEGORY_EMOJI[category] || "\ud83d\udccc";
 }
 
+/**
+ * Escape characters that Slack mrkdwn treats specially. Apply to any
+ * field that contains free-form text from the model or human input \u2014
+ * unescaped `<`, `>`, and `&` can corrupt block rendering or be
+ * misinterpreted as link/user/channel mentions.
+ */
+function esc(text: string | null | undefined): string {
+  if (!text) return "";
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function buildReviewFooter(): KnownBlock[] {
   const reviewTag = process.env.SLACK_REVIEW_TAG;
   const tagText = reviewTag
@@ -114,8 +125,8 @@ export function formatMatchesToSlack(
 
     const partner = allPartners.find((p) => p.name === partnerName);
     const partnerLabel = partner
-      ? `${partner.name} / ${partner.company}`
-      : partnerName;
+      ? `${esc(partner.name)} / ${esc(partner.company)}`
+      : esc(partnerName);
 
     // Partner header
     blocks.push({
@@ -131,15 +142,15 @@ export function formatMatchesToSlack(
       matchedOppIds.add(match.opportunityId);
       const opp = oppLookup.get(match.opportunityId);
       const emoji = opp ? getEmoji(opp.category) : "\ud83d\udccc";
-      const oppTitle = opp?.title || match.opportunityTitle;
-      const dateInfo = opp?.dateDisplayText || "";
-      const category = opp?.category || "";
+      const oppTitle = esc(opp?.title || match.opportunityTitle);
+      const dateInfo = esc(opp?.dateDisplayText || "");
+      const category = esc(opp?.category || "");
 
       const dateWarning =
         opp?.dateConfidence === "unknown"
           ? "\n> :warning: No set deadline — open until filled"
           : "";
-      const link = opp?.sourceUrl ? `\n> :link: ${opp.sourceUrl}` : "";
+      const link = opp?.sourceUrl ? `\n> :link: ${esc(opp.sourceUrl)}` : "";
 
       blocks.push({
         type: "section",
@@ -148,9 +159,9 @@ export function formatMatchesToSlack(
           text: [
             `> ${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
             category || dateInfo ? `> _${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
-            `> _Why:_ ${match.rationale}`,
+            `> _Why:_ ${esc(match.rationale)}`,
             `>`,
-            `> :speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
+            `> :speech_balloon: *Client Language:* "${esc(match.clientFacingLanguage)}"`,
             dateWarning || null,
             link || null,
           ]
@@ -160,11 +171,13 @@ export function formatMatchesToSlack(
       });
 
       if (match.outreachDraftEmail) {
+        // Strip triple-backticks so user content can't break out of the code fence.
+        const safeEmail = match.outreachDraftEmail.replace(/```/g, "'''");
         blocks.push({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `:email: *Draft Outreach Email:*\n\`\`\`${match.outreachDraftEmail}\`\`\``,
+            text: `:email: *Draft Outreach Email:*\n\`\`\`${safeEmail}\`\`\``,
           },
         });
       }
@@ -186,12 +199,12 @@ export function formatMatchesToSlack(
   ];
   if (unmatchedPartners.length > 0) {
     summaryLines.push(
-      `_Partners with no matches this week:_ ${unmatchedPartners.join(", ")}`
+      `_Partners with no matches this week:_ ${unmatchedPartners.map(esc).join(", ")}`
     );
   }
   if (unmatchedOpps.length > 0) {
     summaryLines.push(
-      `_Opportunities with no matches:_ ${unmatchedOpps.join(", ")}`
+      `_Opportunities with no matches:_ ${unmatchedOpps.map(esc).join(", ")}`
     );
   }
 
@@ -247,7 +260,7 @@ export function formatPartnerMatchesToSlack(
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*${partner.name} / ${partner.company}* has *${matches.length}* matching ${matches.length === 1 ? "opportunity" : "opportunities"}${strongNote} this week.\n\nOpen the thread below to review each match and react to track what you've acted on.`,
+        text: `*${esc(partner.name)} / ${esc(partner.company)}* has *${matches.length}* matching ${matches.length === 1 ? "opportunity" : "opportunities"}${strongNote} this week.\n\nOpen the thread below to review each match and react to track what you've acted on.`,
       },
     },
     ...buildReviewFooter(),
@@ -340,8 +353,8 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
   });
 
   const personLabel = [
-    summary.primaryPerson.name,
-    summary.primaryPerson.company ? `@ ${summary.primaryPerson.company}` : null,
+    esc(summary.primaryPerson.name),
+    summary.primaryPerson.company ? `@ ${esc(summary.primaryPerson.company)}` : null,
   ]
     .filter(Boolean)
     .join(" ");
@@ -391,7 +404,7 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `> :mag: *Need:* "${need.statement}" _(urgency: ${need.urgency})_`,
+            text: `> :mag: *Need:* "${esc(need.statement)}" _(urgency: ${esc(need.urgency)})_`,
           },
         });
       }
@@ -404,9 +417,9 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
           text: {
             type: "mrkdwn",
             text: [
-              `> \u2192 *${match.opportunityTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
-              `>   _${match.rationale}_`,
-              `>   :speech_balloon: "${match.clientFacingLanguage}"`,
+              `> \u2192 *${esc(match.opportunityTitle)}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+              `>   _${esc(match.rationale)}_`,
+              `>   :speech_balloon: "${esc(match.clientFacingLanguage)}"`,
             ].join("\n"),
           },
         });
@@ -448,7 +461,7 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `> :bulb: *Offers:* "${offer.statement}" _(${offer.specificity})_`,
+            text: `> :bulb: *Offers:* "${esc(offer.statement)}" _(${esc(offer.specificity)})_`,
           },
         });
       }
@@ -457,9 +470,9 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
         (a, b) => b.confidenceScore - a.confidenceScore
       )) {
         const matchLines = [
-          `> \u2192 *${match.partnerName}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
-          `>   _${match.rationale}_`,
-          `>   :speech_balloon: "${match.clientFacingLanguage}"`,
+          `> \u2192 *${esc(match.partnerName)}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
+          `>   _${esc(match.rationale)}_`,
+          `>   :speech_balloon: "${esc(match.clientFacingLanguage)}"`,
         ];
 
         blocks.push({
@@ -471,11 +484,12 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
         });
 
         if (match.introDraftEmail) {
+          const safeEmail = match.introDraftEmail.replace(/```/g, "'''");
           blocks.push({
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `:email: *Draft Intro Email:*\n\`\`\`${match.introDraftEmail}\`\`\``,
+              text: `:email: *Draft Intro Email:*\n\`\`\`${safeEmail}\`\`\``,
             },
           });
         }
@@ -493,9 +507,9 @@ export function formatDiscoMatchesToSlack(input: DiscoFormatInput): KnownBlock[]
       type: "mrkdwn",
       text: [
         "*Intro-Worthiness*",
-        `Score: ${iw.score.toFixed(2)} | ${iw.rationale}`,
+        `Score: ${iw.score.toFixed(2)} | ${esc(iw.rationale)}`,
         iw.suggestedTopics.length > 0
-          ? `Suggested intro topics: ${iw.suggestedTopics.join(", ")}`
+          ? `Suggested intro topics: ${iw.suggestedTopics.map(esc).join(", ")}`
           : null,
       ]
         .filter(Boolean)
@@ -530,17 +544,28 @@ export async function postSlackMessage(
     return undefined;
   }
 
-  // Slack has a 50-block limit per message. Split if needed.
+  // Slack has a 50-block limit per message. Split if needed. Tolerate
+  // partial failure: if a later chunk fails, we still want to return the
+  // first message timestamp so threading/reaction tracking can attach to
+  // what *did* post. Matches are already persisted in the DB at this point.
   const BLOCK_LIMIT = 50;
   let firstTs: string | undefined;
   for (let i = 0; i < blocks.length; i += BLOCK_LIMIT) {
     const chunk = blocks.slice(i, i + BLOCK_LIMIT);
-    const result = await slack.chat.postMessage({
-      channel: target,
-      blocks: chunk,
-      text: "Weekly Opportunity Matches", // Fallback for notifications
-    });
-    if (!firstTs) firstTs = result.ts;
+    try {
+      const result = await slack.chat.postMessage({
+        channel: target,
+        blocks: chunk,
+        text: "Weekly Opportunity Matches", // Fallback for notifications
+      });
+      if (!firstTs) firstTs = result.ts;
+    } catch (err) {
+      console.error(
+        `Slack chunk ${Math.floor(i / BLOCK_LIMIT) + 1} of ${Math.ceil(blocks.length / BLOCK_LIMIT)} failed to post:`,
+        err instanceof Error ? err.message : err
+      );
+      // Continue posting remaining chunks rather than aborting the entire run.
+    }
   }
   return firstTs;
 }
@@ -553,9 +578,9 @@ export function formatSingleMatchBlocks(
   opportunity: NewsletterOpportunity | undefined
 ): KnownBlock[] {
   const emoji = opportunity ? getEmoji(opportunity.category) : "\ud83d\udccc";
-  const oppTitle = opportunity?.title || match.opportunityTitle;
-  const dateInfo = opportunity?.dateDisplayText || "";
-  const category = opportunity?.category || "";
+  const oppTitle = esc(opportunity?.title || match.opportunityTitle);
+  const dateInfo = esc(opportunity?.dateDisplayText || "");
+  const category = esc(opportunity?.category || "");
 
   const blocks: KnownBlock[] = [
     {
@@ -565,9 +590,9 @@ export function formatSingleMatchBlocks(
         text: [
           `${emoji} *${oppTitle}* (Confidence: ${match.confidenceScore.toFixed(2)})`,
           category || dateInfo ? `_${[category, dateInfo].filter(Boolean).join(" | ")}_` : null,
-          `_Why:_ ${match.rationale}`,
+          `_Why:_ ${esc(match.rationale)}`,
           "",
-          `:speech_balloon: *Client Language:* "${match.clientFacingLanguage}"`,
+          `:speech_balloon: *Client Language:* "${esc(match.clientFacingLanguage)}"`,
         ]
           .filter((l) => l !== null)
           .join("\n"),
@@ -576,11 +601,13 @@ export function formatSingleMatchBlocks(
   ];
 
   if (match.outreachDraftEmail) {
+    // Strip triple-backticks so user content can't break out of the code fence.
+    const safeEmail = match.outreachDraftEmail.replace(/```/g, "'''");
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `:email: *Draft Outreach Email:*\n\`\`\`${match.outreachDraftEmail}\`\`\``,
+        text: `:email: *Draft Outreach Email:*\n\`\`\`${safeEmail}\`\`\``,
       },
     });
   }
@@ -617,20 +644,30 @@ export async function postMatchThreadReplies(
     const opp = oppLookup.get(match.opportunityId);
     const blocks = formatSingleMatchBlocks(match, opp);
 
-    const result = await slack.chat.postMessage({
-      channel,
-      thread_ts: parentTs,
-      blocks,
-      text: `Match: ${match.opportunityTitle} (${match.confidenceScore.toFixed(2)})`,
-    });
-
-    if (result.ts) {
-      results.push({
-        opportunityId: match.opportunityId,
-        partnerName: match.partnerName,
-        messageTs: result.ts,
+    try {
+      const result = await slack.chat.postMessage({
         channel,
+        thread_ts: parentTs,
+        blocks,
+        text: `Match: ${match.opportunityTitle} (${match.confidenceScore.toFixed(2)})`,
       });
+
+      if (result.ts) {
+        results.push({
+          opportunityId: match.opportunityId,
+          partnerName: match.partnerName,
+          messageTs: result.ts,
+          channel,
+        });
+      }
+    } catch (err) {
+      // A single failed thread reply (rate limit, formatting issue) should
+      // not abort posting the remaining matches. The match is already in
+      // the DB and can be re-posted manually via /match reset if needed.
+      console.error(
+        `Failed to post thread reply for ${match.partnerName} → ${match.opportunityTitle}:`,
+        err instanceof Error ? err.message : err
+      );
     }
   }
 

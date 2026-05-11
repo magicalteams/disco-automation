@@ -10,15 +10,13 @@
  *   IMPORT_DELAY_MS — delay between files in ms (default: 2000)
  *   IMPORT_DRY_RUN — set to "true" to list files without processing
  */
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../src/lib/clients/db";
 import {
   listDossierFiles,
   downloadFile,
 } from "../src/lib/clients/google-drive";
 import { parseDocxToText } from "../src/lib/utils/docx-parser";
 import { extractAndUpsertProfile } from "../src/lib/ingest/extract-and-upsert";
-
-const prisma = new PrismaClient();
 
 interface ImportResult {
   fileName: string;
