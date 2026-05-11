@@ -30,6 +30,7 @@ import {
 } from "../src/lib/slack/formatter";
 import { syncAndExpireOpportunities } from "../src/lib/matching/pre-match-sync";
 import { getWeekIdentifier } from "../src/lib/utils/date-classifier";
+import { parseModelJson } from "../src/lib/utils/parse-model-json";
 
 const BATCH_SIZE = 4; // Partners per Claude call (for prompt size, not timeout)
 const DEFAULT_THRESHOLD = parseFloat(process.env.MATCH_CONFIDENCE_THRESHOLD || "0.6");
@@ -355,13 +356,8 @@ async function matchBatch(
     maxTokens: 32768,
   });
 
-  let jsonStr = rawResponse.trim();
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-  }
-
   // Parse leniently, retry incomplete matches
-  const lenientParsed = LenientBatchMatchResponseSchema.safeParse(JSON.parse(jsonStr));
+  const lenientParsed = LenientBatchMatchResponseSchema.safeParse(parseModelJson(rawResponse));
   if (!lenientParsed.success) {
     throw new Error(`Failed to parse match response: ${lenientParsed.error.message}`);
   }
@@ -452,12 +448,7 @@ async function retrySingleMatch(
 
   const rawResponse = await callClaude(user, { system, model: "sonnet", maxTokens: 2048 });
 
-  let jsonStr = rawResponse.trim();
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-  }
-
-  const parsed = BatchMatchResponseSchema.safeParse(JSON.parse(jsonStr));
+  const parsed = BatchMatchResponseSchema.safeParse(parseModelJson(rawResponse));
   if (!parsed.success || parsed.data.matches.length === 0) return null;
 
   const m = parsed.data.matches[0];

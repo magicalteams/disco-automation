@@ -5,6 +5,7 @@ import {
   type PartnerProfileInput,
 } from "@/schemas/partner-profile";
 import { prisma } from "@/lib/clients/db";
+import { parseModelJson } from "@/lib/utils/parse-model-json";
 
 export interface ExtractionSource {
   sourceType: "drive_import" | "manual_paste";
@@ -40,25 +41,8 @@ export async function extractAndUpsertProfile(
     maxTokens: 4096,
   });
 
-  // 3. Parse JSON (handle markdown fences the LLM sometimes adds). Both the
-  // raw JSON parse and the Zod validation can fail on bad model output; we
-  // surface a clear error so the bulk-import loop can skip and continue.
-  let jsonStr = rawResponse.trim();
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-  }
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(jsonStr);
-  } catch (err) {
-    throw new Error(
-      `Profile extraction returned invalid JSON: ${err instanceof Error ? err.message : err}. Raw response prefix: ${jsonStr.slice(0, 200)}`
-    );
-  }
-
-  // 4. Validate with Zod
-  const validated = PartnerProfileSchema.safeParse(parsedJson);
+  // 3. Parse JSON with fence-strip + jsonrepair fallback, then Zod-validate.
+  const validated = PartnerProfileSchema.safeParse(parseModelJson(rawResponse));
   if (!validated.success) {
     throw new Error(
       `Profile extraction failed schema validation: ${validated.error.message}`

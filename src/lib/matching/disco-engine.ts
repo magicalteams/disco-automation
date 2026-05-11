@@ -17,6 +17,7 @@ import {
   type NeedToOpportunityMatch,
   type OfferToPartnerMatch,
 } from "@/schemas/disco-transcript";
+import { parseModelJson } from "@/lib/utils/parse-model-json";
 
 const DEFAULT_THRESHOLD = parseFloat(
   process.env.MATCH_CONFIDENCE_THRESHOLD || "0.6"
@@ -35,14 +36,6 @@ export interface DiscoMatchSummary {
   extraction: TranscriptExtraction;
   needToOpportunityMatches: NeedToOpportunityMatch[];
   offerToPartnerMatches: OfferToPartnerMatch[];
-}
-
-function parseJsonResponse(raw: string): unknown {
-  let jsonStr = raw.trim();
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-  }
-  return JSON.parse(jsonStr);
 }
 
 /**
@@ -147,7 +140,7 @@ export async function processAndMatchTranscript(
     });
 
     const extraction = TranscriptExtractionSchema.parse(
-      parseJsonResponse(rawExtraction)
+      parseModelJson(rawExtraction)
     );
 
     // 5. Store extracted data
@@ -190,7 +183,7 @@ export async function processAndMatchTranscript(
         });
 
         const parsed = NeedToOpportunityResponseSchema.safeParse(
-          parseJsonResponse(rawNeedMatches)
+          parseModelJson(rawNeedMatches)
         );
 
         if (parsed.success) {
@@ -239,7 +232,7 @@ export async function processAndMatchTranscript(
         });
 
         const parsed = OfferToPartnerResponseSchema.safeParse(
-          parseJsonResponse(rawOfferMatches)
+          parseModelJson(rawOfferMatches)
         );
 
         if (parsed.success) {

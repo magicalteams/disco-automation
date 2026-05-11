@@ -4,6 +4,7 @@ import { buildNewsletterExtractionPrompt } from "@/lib/prompts/extract-newslette
 import { ExtractedOpportunitySchema } from "@/schemas/newsletter-opportunity";
 import { classifyAndSetExpiry, getWeekIdentifier } from "@/lib/utils/date-classifier";
 import { pushOpportunitiesToSheet } from "@/lib/clients/google-sheets";
+import { parseModelJson } from "@/lib/utils/parse-model-json";
 import { z } from "zod";
 
 export interface ExtractionInput {
@@ -65,24 +66,9 @@ export async function extractNewsletter(
     retries: 2,
   });
 
-  // Parse JSON response with explicit error context — bad model output is
-  // a recurring failure mode, so surface it loudly instead of crashing on
-  // an opaque SyntaxError.
-  let jsonStr = rawResponse.trim();
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
-  }
-
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(jsonStr);
-  } catch (err) {
-    throw new Error(
-      `Newsletter extraction returned invalid JSON: ${err instanceof Error ? err.message : err}. Raw response prefix: ${jsonStr.slice(0, 200)}`
-    );
-  }
-
-  const validated = z.array(ExtractedOpportunitySchema).safeParse(parsedJson);
+  // parseModelJson strips fences and falls back to jsonrepair if the model
+  // produced malformed (but recoverable) JSON. Schema validation comes after.
+  const validated = z.array(ExtractedOpportunitySchema).safeParse(parseModelJson(rawResponse));
   if (!validated.success) {
     throw new Error(
       `Newsletter extraction failed schema validation: ${validated.error.message}`
