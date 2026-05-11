@@ -46,12 +46,18 @@ export async function callClaude(
         await new Promise((r) => setTimeout(r, delay));
       }
 
-      const message = await client.messages.create({
+      // Use streaming: the SDK rejects non-streaming calls when the worst-case
+      // completion time (60 * 60 * maxTokens / 128_000 seconds) exceeds 10
+      // minutes, which kicks in above ~21k maxTokens. Streaming sidesteps the
+      // check and is the SDK's official recommendation for long outputs.
+      const stream = client.messages.stream({
         model: MODELS[model],
         max_tokens: maxTokens,
         ...(system ? { system } : {}),
         messages: [{ role: "user", content: userPrompt }],
       });
+
+      const message = await stream.finalMessage();
 
       if (message.stop_reason === "max_tokens") {
         throw new MaxTokensError(maxTokens);
