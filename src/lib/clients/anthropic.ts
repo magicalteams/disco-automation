@@ -17,6 +17,15 @@ interface LLMCallOptions {
   retries?: number;
 }
 
+export class MaxTokensError extends Error {
+  constructor(maxTokens: number) {
+    super(
+      `Claude response hit max_tokens (${maxTokens}). Output truncated — raise maxTokens or reduce input size.`
+    );
+    this.name = "MaxTokensError";
+  }
+}
+
 export async function callClaude(
   userPrompt: string,
   options: LLMCallOptions = {}
@@ -44,6 +53,10 @@ export async function callClaude(
         messages: [{ role: "user", content: userPrompt }],
       });
 
+      if (message.stop_reason === "max_tokens") {
+        throw new MaxTokensError(maxTokens);
+      }
+
       const block = message.content[0];
       if (block.type !== "text") {
         throw new Error(`Unexpected content type: ${block.type}`);
@@ -51,6 +64,8 @@ export async function callClaude(
       return block.text;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      // Retrying won't help when the same prompt overflows the same budget.
+      if (lastError instanceof MaxTokensError) throw lastError;
       if (attempt === retries) break;
       console.warn(`Claude API attempt ${attempt + 1} failed, retrying...`, lastError.message);
     }

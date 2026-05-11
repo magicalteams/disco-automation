@@ -46,6 +46,25 @@ interface ResolvedMatch {
   outreachDraftEmail?: string;
 }
 
+// Absorb cold-start blips on the Supabase pooler before the first real query.
+async function ensureDbConnection(): Promise<void> {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return;
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      const delay = attempt * 3000;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `DB connection attempt ${attempt}/${maxAttempts} failed (${msg.split("\n")[0]}). Retrying in ${delay}ms...`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
 async function main() {
   const dryRun = process.env.DRY_RUN === "true";
   const threshold = DEFAULT_THRESHOLD;
@@ -56,6 +75,8 @@ async function main() {
   console.log(`Model: Sonnet`);
   console.log(`Threshold: ${threshold}`);
   console.log(`Dry run: ${dryRun}\n`);
+
+  await ensureDbConnection();
 
   // 1. Sync sheet overrides and auto-expire
   console.log("Syncing sheet overrides and expiring past-due opportunities...");
@@ -187,7 +208,9 @@ async function main() {
       console.log(`  ${newMatches.length} new matches found\n`);
       allMatches.push(...newMatches);
 
-      // Save progressively to DB
+      // Save progressively to DB. The retry path in matchBatch can re-emit a
+      // match the original batch already saved; skipDuplicates relies on the
+      // (opportunityId, partnerId, matchRunId) unique constraint.
       if (!dryRun && matchRun && newMatches.length > 0) {
         await prisma.matchResult.createMany({
           data: newMatches.map((m) => ({
@@ -199,6 +222,7 @@ async function main() {
             outreachDraftEmail: m.outreachDraftEmail ?? null,
             matchRunId: matchRun.id,
           })),
+          skipDuplicates: true,
         });
       }
     }
@@ -311,7 +335,7 @@ async function matchBatch(
   const rawResponse = await callClaude(user, {
     system,
     model: "sonnet",
-    maxTokens: 8192,
+    maxTokens: 32768,
   });
 
   let jsonStr = rawResponse.trim();
