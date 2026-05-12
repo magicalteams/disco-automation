@@ -298,14 +298,14 @@ export function formatSheetReminder(
       type: "mrkdwn",
       text: [
         "*What is this?*",
-        "Each week, newsletter opportunities are extracted and matched against our client partners. Before matching runs automatically at *5 PM UTC today*, you have a chance to review and flag any opportunities that aren't relevant.",
+        "Each week, newsletter opportunities are extracted and matched against our client partners. Before matching runs automatically on *Wednesday at 5 PM UTC*, you have a chance to review and flag any opportunities that aren't relevant.",
         "",
         "*What to do:*",
         `1. <${sheetUrl}|Open the Opportunities Sheet>`,
         "2. Scan the *Status* column \u2014 everything defaults to `active`",
         "3. Change any stale or irrelevant opportunities to `expired`",
         "4. Flag anything uncertain as `needs_review` (it will be skipped this week)",
-        "5. That's it \u2014 matching runs automatically at 5 PM UTC",
+        "5. That's it \u2014 matching runs automatically Wednesday at 5 PM UTC",
       ].join("\n"),
     },
   });

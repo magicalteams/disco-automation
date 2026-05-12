@@ -8,8 +8,8 @@ This is the admin guide for running the weekly matching automation and disco mat
 |------|------|-----|
 | Create partner dossiers | When new partners onboard (1-3/month) | Admin |
 | Newsletter ingestion | Runs automatically Monday 11 AM UTC | Automated |
-| Review opportunity sheet | Monday between 2-5 PM UTC (after Slack reminder) | Admin or team |
-| Weekly matching | Runs automatically Monday 5 PM UTC | Automated |
+| Review opportunity sheet | Monday 2 PM UTC through Wednesday 5 PM UTC (after Slack reminder) | Admin or team |
+| Weekly matching | Runs automatically Wednesday 5 PM UTC | Automated |
 | Review match drafts | After matching posts to Slack | Admin + Strategist |
 | Disco matching | After any discovery call (1-3/month) | Admin (via `/disco` in Slack) |
 
@@ -45,7 +45,7 @@ Every client partner needs a dossier before they can be matched against opportun
 
 ## 2. Weekly Newsletter Process
 
-Each Monday, newsletter opportunities are automatically ingested from the Business Village LinkedIn newsletter and matched against partner profiles.
+Each Monday, newsletter opportunities are automatically ingested from the Business Village LinkedIn newsletter. Matching against partner profiles runs the following Wednesday, giving reviewers two days to flag anything irrelevant before it reaches partners.
 
 ### Step 1: Newsletter Ingestion (Automated — Monday 11 AM UTC)
 
@@ -57,9 +57,9 @@ The system automatically:
 5. Pushes them to the Google Sheet for review
 6. Posts a Slack confirmation (or error alert if something goes wrong)
 
-### Step 2: Review Opportunities (Monday 2-5 PM UTC)
+### Step 2: Review Opportunities (Monday 2 PM UTC → Wednesday 5 PM UTC)
 
-At 2 PM UTC Monday, a Slack reminder will be posted with a link to the Google Sheet. Before 5 PM UTC:
+At 2 PM UTC Monday, a Slack reminder will be posted with a link to the Google Sheet. Anytime before Wednesday 5 PM UTC:
 
 1. Open the Opportunities Sheet (link is in the Slack message)
 2. Scan the **Status** column — every new opportunity defaults to `active`
@@ -69,7 +69,7 @@ At 2 PM UTC Monday, a Slack reminder will be posted with a link to the Google Sh
 
 If you don't change anything, all opportunities will be matched as-is.
 
-### Step 3: Matching Runs Automatically (Monday 5 PM UTC)
+### Step 3: Matching Runs Automatically (Wednesday 5 PM UTC)
 
 The system will:
 1. Sync any status changes you made in the sheet
@@ -283,9 +283,9 @@ All crons run on Mondays. Configured in `vercel.json`.
 
 | Cron | Schedule | Path |
 |------|----------|------|
-| Newsletter ingest | Monday 11:00 UTC | `/api/cron/newsletter-ingest` |
-| Sheet review reminder | Monday 14:00 UTC | `/api/cron/sheet-reminder` |
-| Weekly matching | Monday 17:00 UTC | `/api/cron/weekly-match` |
+| Newsletter ingest | Monday 11:00 UTC | `/api/cron/newsletter-ingest` (Vercel) |
+| Sheet review reminder | Monday 14:00 UTC | `/api/cron/sheet-reminder` (Vercel) |
+| Weekly matching | Wednesday 17:00 UTC | GitHub Actions workflow `weekly-matching.yml` |
 
 ### External Services
 

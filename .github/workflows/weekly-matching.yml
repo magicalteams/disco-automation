@@ -8,7 +8,7 @@ on:
         required: false
         default: 'false'
   schedule:
-    - cron: '0 17 * * 1'  # Monday 5 PM UTC
+    - cron: '0 17 * * 3'  # Wednesday 5 PM UTC
 
 jobs:
   match:
